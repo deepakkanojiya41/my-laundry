@@ -2553,7 +2553,7 @@ Object.assign(ACTIONS, {
   editCustomer: t => openCustomerForm(t.dataset.id, () => render()),
   sortCust: t => { UI.sort = t.dataset.v; render(); },
   delCustomer: t => {
-    const c = custById(t.dataset.id); if (!c) return;
+    const c = custById(t.dataset.id || t.dataset.cid); if (!c) return;
     confirmSheet({
       title: 'Delete ' + c.name + '?', msg: 'The customer and their entries go to the Recycle bin. You can restore them.', label: 'Delete', danger: true,
       onOk: () => {
@@ -2629,7 +2629,9 @@ Object.assign(ACTIONS, {
       title: 'Delete entry ' + String(e.no).padStart(2, '0') + '?', msg: 'The entry moves to the Recycle bin.', label: 'Delete', danger: true,
       onOk: () => {
         e.deleted = true; e.deletedAt = new Date().toISOString(); DB.bin.entries.push(e);
-        persist('entry', e.id); render();
+        persist('entry', e.id);
+        if (sheets.length) requestClose();          /* the sheet was showing the entry we just deleted */
+        render();
         snack('Entry deleted', 'Undo', () => { e.deleted = false; e.deletedAt = null; DB.bin.entries = DB.bin.entries.filter(x => x.id !== e.id); persist('entry', e.id); render(); });
       }
     });
@@ -2751,7 +2753,14 @@ Object.assign(ACTIONS, {
   rateAdd: () => openRateItem(null),
   rateEdit: t => openRateItem(t.dataset.id),
   rateDel: t => {
-    confirmSheet({ title: 'Delete item?', msg: 'This removes it from the rate card.', label: 'Delete', danger: true, onOk: () => { DB.rates = DB.rates.filter(r => r.id !== t.dataset.id); persist('rates'); render(); toast('Item removed'); } });
+    confirmSheet({
+      title: 'Delete item?', msg: 'This removes it from the rate card.', label: 'Delete', danger: true,
+      onOk: () => {
+        DB.rates = DB.rates.filter(r => r.id !== t.dataset.id); persist('rates');
+        if (sheets.length) requestClose();          /* close the editor for the item we just removed */
+        render(); toast('Item removed');
+      }
+    });
   },
   rateSvc: t => { UI.rateSvc = t.dataset.v; render(); },
 
