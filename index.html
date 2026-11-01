@@ -654,14 +654,22 @@ const FB = {
       rates: DB.rates, templates: DB.templates, bin: DB.bin, updated: new Date().toISOString()
     };
   },
-  async write() {
+  async write(retried) {
     if (this.saving) { this.dirty = true; return; }
     this.saving = true;
     this.status = 'saving';
     const body = JSON.stringify(this.payload());
     try { localStorage.setItem('ml_backup', body); } catch (e) { }
     try {
+      /* always present a fresh id token, an expired one looks like "permission denied" */
+      if (window.FBGoogle) { try { const u = await window.FBGoogle.current(); if (u && !this.token) await this.signIn(); } catch (e) { } }
       const r = await fetch(this.url(), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+      if ((r.status === 401 || r.status === 403) && !retried) {
+        this.saving = false;
+        if (window.FBGoogle) { try { await window.FBGoogle.current(); } catch (e) { } }
+        if (!this.token) await this.signIn();
+        return this.write(true);
+      }
       if (r.ok) {
         this.online = true; this.status = 'saved'; this.lastError = ''; this.warned = false;
       } else {
@@ -2860,9 +2868,15 @@ Object.assign(ACTIONS, {
         <div class="card"><div class="h3">Check these</div><div class="sub" style="margin-top:4px;line-height:1.6">
         1. Realtime Database rules allow <code>auth != null</code> (or <code>true</code> for testing).<br>
         2. Authentication → Anonymous is enabled, or you are signed in with Google.<br>
-        3. The database exists in the same project (Realtime Database, not Firestore).</div></div>`,
+        3. The database exists in the same project (Realtime Database, not Firestore).<br>
+        4. Authentication → Anonymous must be enabled, or sign in with Google below.</div></div>
+        ${DB.session && DB.session.uid ? '' : `<button class="btn primary" data-gsign style="margin-top:4px">Sign in with Google to sync</button>`}`,
       foot: `<button class="btn primary" data-close2>OK</button>`,
-      onMount: w => { $('[data-close2]', w).addEventListener('click', () => requestClose()); }
+      onMount: w => {
+        $('[data-close2]', w).addEventListener('click', () => requestClose());
+        const g = $('[data-gsign]', w);
+        if (g) g.addEventListener('click', () => { requestClose(); setTimeout(() => ACTIONS.siGoogle(), 120); });
+      }
     });
   },
   backup: () => openRestore(),
