@@ -81,9 +81,6 @@ a{color:var(--focus)}
 /* profile entrance: avatar pops, then the rest of the blocks settle */
 .screen-anim .avatar.lg{animation:pop .5s cubic-bezier(.2,.9,.3,1.2) both}
 @keyframes pop{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
-/* the app itself fades up when it opens */
-#view.app-in{animation:appIn .5s cubic-bezier(.2,.8,.25,1) both}
-@keyframes appIn{from{opacity:0;transform:translateY(10px) scale(.994)}to{opacity:1;transform:none}}
 #view.out-left{animation:outL .13s ease-in both}
 #view.out-right{animation:outR .13s ease-in both}
 @keyframes outL{to{opacity:0;transform:translateX(-28px)}}
@@ -3413,7 +3410,7 @@ function enterSession() {
   pendingAnim = true; UI.dir = 1;
   if (s.type === 'admin') { UI.mode = 'admin'; UI.screen = 'home'; UI.adminTab = 'home'; }
   else { UI.mode = 'cust'; UI.preview = false; UI.screen = 'entries'; UI.custTab = 'entries'; UI.params = { cid: s.customerId }; }
-  render(); window.scrollTo(0, 0); appEnter();
+  render(); window.scrollTo(0, 0);
 }
 function cachedSession() {
   try {
@@ -3423,15 +3420,6 @@ function cachedSession() {
 }
 function saveSession(s) {
   try { s ? localStorage.setItem('ml_session', JSON.stringify(s)) : localStorage.removeItem('ml_session'); } catch (e) { }
-}
-/* the app fades up when it opens */
-function appEnter() {
-  const v = $('#view');
-  if (!v) return;
-  v.classList.remove('app-in');
-  void v.offsetWidth;
-  v.classList.add('app-in');
-  setTimeout(() => v.classList.remove('app-in'), 620);
 }
 async function boot() {
   const cached = cachedSession();
@@ -3470,11 +3458,10 @@ async function boot() {
     saveSession(DB.session);
     if (UI.screen === 'splash') enterSession(); else render();
   } else if (UI.screen === 'splash') {
-    UI.screen = 'signin'; UI.mode = 'admin'; render(); appEnter();
+    UI.screen = 'signin'; UI.mode = 'admin'; render();
   } else {
     render();                       /* the user already navigated: do not reset their screen */
   }
-  if (!sheets.length) appEnter();   /* the last render wins: animate the final screen */
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
       reg.update().catch(() => { });
