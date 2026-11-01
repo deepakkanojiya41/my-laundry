@@ -575,7 +575,8 @@ const TPL_NAMES = { daily: 'Daily entry', due: 'Payment due', ready: 'Order read
 function defaultShop() {
   return {
     name: 'My Laundry', tagline: 'Ironing & dry clean, picked up and delivered.',
-    phone: '', address: '', upi: '', webUrl: '', owner: 'Deepak',
+    phone: '9876543210', address: 'Shop 4, Sai Complex, MG Road, Pune 411001',
+    upi: 'mylaundry@okaxis', webUrl: 'https://mylaundry.example', owner: 'Deepak',
     ownerEmail: ADMIN_EMAIL_FALLBACK, qrImage: null
   };
 }
@@ -590,12 +591,62 @@ const DB = {
   rates: defaultRates(),
   templates: defaultTemplates(),
   bin: { customers: [], entries: [] },
-  session: null            // {type:'admin'|'customer', email, customerId}
+  session: null,           // {type:'admin'|'customer', email, customerId}
+  demoSeeded: true
 };
 
 /* the single persist hook — wire any storage here later */
 function persist(kind, key) { /* storage intentionally out of scope (in-memory only) */ }
 
+/* ---------- seed demo data ---------- */
+function seedDemo() {
+  const T = todayISO();
+  const mk = (id, name, phone, email, address, note, days) => ({ id, name, phone, email: email || '', address: address || '', note: note || '', created: dateAdd(T, -days), deleted: false, deletedAt: null });
+  DB.customers = [
+    mk('c1', 'Ramesh Iyer', '9820011223', 'ramesh.iyer@gmail.com', '12 Rose Villa, FC Road, Pune 411004', 'Prefers heavy starch on shirts.', 120),
+    mk('c2', 'Priya Sharma', '9930022114', 'priya.sharma@gmail.com', 'B-704, Sunshine Heights, Kothrud, Pune 411038', '', 96),
+    mk('c3', 'Anil Deshmukh', '9822044556', '', 'Plot 8, Sahakar Nagar, Pune 411009', 'Calls before delivery.', 74),
+    mk('c4', 'Fatima Shaikh', '9765012398', 'fatima.shaikh@gmail.com', 'Shop 2, Camp Road, Pune 411001', '', 58),
+    mk('c5', 'Vikram Patil', '9011023456', '', 'Row House 21, Baner, Pune 411045', 'Sarees only dry clean.', 40),
+    mk('c6', 'Sunita Rao', '9890334455', '', 'Flat 3A, Aundh, Pune 411007', '', 22),
+    mk('c7', 'Arjun Nair', '9765544321', 'arjun.nair@gmail.com', '14 Lake View, Wakad, Pune 411057', '', 9)
+  ];
+  const I = (name, qty, price, svc) => ({ name, qty, price, svc: svc || 'Ironing' });
+  const E = (cid, daysAgo, items, status, paid, note, svc) => ({
+    id: uid(), no: 0, customerId: cid, service: svc || 'Ironing', items,
+    status, note: note || '', due: dateAdd(T, -daysAgo + 1),
+    created: dateAdd(T, -daysAgo), payments: paid ? [{ amount: paid, date: dateAdd(T, -daysAgo) }] : [],
+    deleted: false, deletedAt: null
+  });
+  DB.entries = [
+    E('c1', 34, [I('Shirt', 5, 10), I('Trousers', 3, 12)], 'Delivered', 86),
+    E('c2', 31, [I('Saree', 2, 150, 'Dry clean'), I('Dupatta', 2, 50, 'Dry clean')], 'Delivered', 400, '', 'Dry clean'),
+    E('c3', 26, [I('Bedsheet', 2, 25), I('Towel', 4, 12)], 'Delivered', 98),
+    E('c4', 24, [I('Kurta', 3, 12), I('Salwar suit', 1, 25)], 'Delivered', 0),
+    E('c5', 19, [I('Jacket', 1, 250, 'Dry clean'), I('Suit', 1, 350, 'Dry clean')], 'Delivered', 600, '', 'Dry clean'),
+    E('c1', 15, [I('Shirt', 8, 10), I('Jeans', 2, 15)], 'Delivered', 110),
+    E('c6', 12, [I('Saree', 3, 30), I('Blanket', 1, 50)], 'Delivered', 140),
+    E('c2', 9, [I('Shirt', 6, 10), I('Trousers', 2, 12)], 'Delivered', 0),
+    E('c7', 6, [I('T-shirt', 4, 8), I('Jeans', 1, 15)], 'Delivered', 47),
+    E('c3', 5, [I('Shirt', 4, 10), I('Kurta', 2, 12)], 'Delivered', 0, 'Deliver after 6 pm'),
+    E('c4', 4, [I('Saree', 2, 150, 'Dry clean')], 'Delivered', 300, '', 'Dry clean'),
+    /* live pipeline */
+    E('c5', 3, [I('Shirt', 7, 10), I('Trousers', 3, 12)], 'OverdueFix', 0, 'Starch light'),
+    E('c1', 2, [I('Shirt', 3, 10), I('Bedsheet', 1, 25)], 'Ready', 0),
+    E('c2', 1, [I('Salwar suit', 2, 25), I('Dupatta', 2, 8)], 'Processing', 0, '', 'Ironing'),
+    E('c6', 1, [I('Saree', 4, 30), I('Blouse', 4, 10)], 'Processing', 60),
+    E('c7', 0, [I('Shirt', 5, 10), I('Jeans', 2, 15)], 'Pickup', 0, 'Pickup between 10 and 12'),
+    E('c3', 0, [I('Kurta', 4, 12), I('Towel', 2, 12)], 'Ready', 0)
+  ];
+  /* the one intentionally late entry */
+  const late = DB.entries.find(e => e.status === 'OverdueFix');
+  if (late) { late.status = 'Ready'; late.due = dateAdd(T, -2); late.created = dateAdd(T, -4); }
+  renumberAll();
+  DB.requests = [
+    { id: uid(), name: 'Meera Joshi', mobile: '9822011455', date: todayISO(), slot: SLOTS[2], count: 6, service: 'Ironing', address: '5, Shivaji Nagar, Pune 411005', note: 'Gate code 4417', status: 'requested', created: todayISO() },
+    { id: uid(), name: 'Sameer Kale', mobile: '9930045677', date: dateAdd(T, 1), slot: SLOTS[0], count: 3, service: 'Dry clean', address: '22, Model Colony, Pune 411016', note: '', status: 'requested', created: todayISO() }
+  ];
+}
 function renumberAll() {
   const byDay = {};
   DB.entries.slice().sort((a, b) => a.created.localeCompare(b.created)).forEach(e => {
@@ -1035,16 +1086,10 @@ function openWa(phone, text) {
   a.href = waLink(phone, text); a.target = '_blank'; a.rel = 'noopener';
   document.body.appendChild(a); a.click(); a.remove();
 }
-/* where this app is hosted — used to build passbook / pickup links */
-function appBase() {
-  if (DB.shop.webUrl) return DB.shop.webUrl.replace(/\/$/, '');
-  const href = location.href.split('#')[0].split('?')[0].replace(/index\.html$/, '');
-  return href.replace(/\/$/, '');
-}
 function passbookLink(customerId) {
   const payload = { v: 1, s: DB.shop.name, t: DB.shop.tagline, c: customerId, n: (custById(customerId) || {}).name || '' };
   const packed = LZString.compressToEncodedURIComponent(JSON.stringify(payload));
-  return appBase() + '/#p=' + packed;
+  return (DB.shop.webUrl || 'https://mylaundry.example').replace(/\/$/, '') + '/#p=' + packed;
 }
 function renderTemplate(key, ctx) {
   let t = DB.templates[key] || '';
@@ -1188,7 +1233,7 @@ SCREENS.home = function () {
     <div class="hero-top">
       <div class="grow">
         <div class="hero-greet">${esc(greeting())}</div>
-        <div class="hero-name">${esc(DB.shop.owner || DB.shop.name)}</div>
+        <div class="hero-name">${esc(DB.shop.owner || 'Owner')}</div>
         <div class="hero-shop">${esc(DB.shop.name)}</div>
         <div class="hero-date">${esc(fmtD(T, 'wd'))}</div>
       </div>
@@ -1245,12 +1290,7 @@ SCREENS.home = function () {
       ${list('Overdue', overdue)}
       ${list('Ready for delivery', ready.filter(e => !isOverdue(e)))}
       ${oweList}
-      ${!liveCustomers().length ? `<div class="card center" style="margin-top:12px">
-        <div class="h3">Welcome to your laundry desk.</div>
-        <div class="sub" style="margin:4px 0 14px">No customers yet. Add your first one, then start taking entries.</div>
-        <button class="btn primary" data-act="addCustomer">${ic('plus')} Add customer</button>
-        <div class="tiny" style="margin-top:10px">Shop name, mobile and UPI ID can be set in Settings → Shop profile.</div>
-      </div>` : (!open.length ? `<div class="card center" style="margin-top:12px"><div class="h3">No open orders.</div><div class="sub">Everything is delivered.</div></div>` : '')}
+      ${!open.length ? `<div class="card center" style="margin-top:12px"><div class="h3">Welcome to your laundry desk.</div><div class="sub">No open orders. Add a customer to get started.</div></div>` : ''}
     </div>`
   };
 };
@@ -2037,7 +2077,7 @@ function openShopProfile() {
       <div class="field"><label class="label">Shop mobile</label><div class="prefix"><span>+91</span><input id="sp-phone" inputmode="numeric" maxlength="10" value="${esc(s.phone)}"></div></div>
       <div class="field"><label class="label">Address</label><textarea class="input" id="sp-addr">${esc(s.address)}</textarea></div>
       <div class="field"><label class="label">Business UPI ID</label><input class="input" id="sp-upi" value="${esc(s.upi)}" placeholder="shop@bank"><div class="hint">Format: name@handle</div></div>
-      <div class="field"><label class="label">Web address of this app</label><input class="input" id="sp-web" value="${esc(s.webUrl)}" placeholder="https://…"><div class="hint">Used to build customer passbook links. Leave blank to use this app's own address.</div></div>
+      <div class="field"><label class="label">Web address of this app</label><input class="input" id="sp-web" value="${esc(s.webUrl)}" placeholder="https://…"><div class="hint">Used to build customer passbook links.</div></div>
       <div class="field"><label class="label">Owner name (greeting)</label><input class="input" id="sp-owner" value="${esc(s.owner)}"></div>
       <div id="sp-err" class="err" style="display:none"></div>`,
     foot: `<button class="btn primary" id="sp-save">Save profile</button>`,
@@ -2050,7 +2090,7 @@ function openShopProfile() {
         if (phone && !validPhone(phone)) { err.textContent = 'Shop mobile must be 10 digits.'; err.style.display = 'block'; return; }
         Object.assign(s, {
           name: $('#sp-name', w).value.trim() || 'My Laundry', tagline: $('#sp-tag', w).value.trim(),
-          phone, address: $('#sp-addr', w).value.trim(), upi, webUrl: $('#sp-web', w).value.trim(),
+          phone, address: $('#sp-addr', w).value.trim(), upi, webUrl: $('#sp-web', w).value.trim() || 'https://mylaundry.example',
           owner: $('#sp-owner', w).value.trim() || 'Owner'
         });
         persist('shop');
@@ -2374,7 +2414,7 @@ SCREENS.entries = function () {
     <div class="hero-line">${t.balance > 0 ? 'Outstanding balance' : 'All settled, thank you'}</div>
     <div style="display:flex;gap:8px;margin-top:14px;position:relative;z-index:2">
       ${t.balance > 0 && DB.shop.upi ? `<button class="btn sm" data-act="custUpi" style="background:var(--on-brand);color:var(--brand);border-color:var(--on-brand);font-weight:700">${ic('qr')} Pay via UPI</button>` : ''}
-      ${DB.shop.phone ? `<button class="btn sm" data-act="callShop" style="background:rgba(255,255,255,.14);color:var(--on-brand);border-color:rgba(255,255,255,.34)">${ic('phone')} Call shop</button>` : ''}
+      <button class="btn sm" data-act="callShop" style="background:rgba(255,255,255,.14);color:var(--on-brand);border-color:rgba(255,255,255,.34)">${ic('phone')} Call shop</button>
     </div>
     <div class="hero-art" style="bottom:-6px">${machineSVG(84)}</div>
   </div>`;
@@ -2477,7 +2517,7 @@ function openPreviewCustomer() {
     UI.preview = true; UI.mode = 'cust'; UI.params = { cid }; UI.custTab = 'entries'; UI.screen = 'entries';
     NAVSTACK.length = 0; render(); window.scrollTo(0, 0);
   };
-  if (!cs.length) { toast('Add a customer first to preview the customer app'); return; }
+  if (!cs.length) { toast('Showing demo data'); enter((DB.customers[0] || {}).id); return; }
   if (cs.length === 1) { enter(cs[0].id); return; }
   openSheet({
     title: 'Open as customer', sub: 'Pick a customer to preview',
@@ -2788,13 +2828,9 @@ Object.assign(ACTIONS, {
   /* customer app */
   custFilter: t => { UI.custFilter = t.dataset.v; render(); },
   custUpi: () => openUpi(null),
-  callShop: () => {
-    if (!DB.shop.phone) return toast('The shop has not added a phone number yet');
-    location.href = 'tel:+91' + normPhone(DB.shop.phone);
-  },
+  callShop: () => { location.href = 'tel:+91' + normPhone(DB.shop.phone); },
   custAsk: () => {
     const c = currentCustomer(); if (!c) return;
-    if (!DB.shop.phone) return toast('The shop has not added a phone number yet');
     openWa(DB.shop.phone, `Namaste, ${c.name} here. Could you please share an update on my laundry?`);
   },
   custStatement: () => { UI.stmtMonth = monthKey(todayISO()); go('statement'); },
@@ -2811,9 +2847,8 @@ Object.assign(ACTIONS, {
     const note = ($('#pu-note') || {}).value || '';
     if (!count) return toast('How many clothes?');
     if (!addr.trim()) return toast('Please add an address');
-    if (!DB.shop.phone) return toast('The shop has not added a phone number yet');
     const payload = { v: 1, name: (c || {}).name || '', mobile: (c || {}).phone || '', date, slot, count, service: svc, address: addr, note };
-    const link = appBase() + '/#r=' + LZString.compressToEncodedURIComponent(JSON.stringify(payload));
+    const link = (DB.shop.webUrl || 'https://mylaundry.example').replace(/\/$/, '') + '/#r=' + LZString.compressToEncodedURIComponent(JSON.stringify(payload));
     const msg = `Pickup request\nName: ${payload.name}\nDate: ${fmtD(date)}\nSlot: ${slot}\nClothes: ${count} pcs\nService: ${svc}\nAddress: ${addr}${note ? '\nNote: ' + note : ''}\n\nShop: open this to import → ${link}`;
     openWa(DB.shop.phone, msg);
     SENT.unshift({ date, slot, count, service: svc });
@@ -2940,6 +2975,7 @@ function handleHash() {
 
 /* ---------- boot ---------- */
 function boot() {
+  seedDemo();
   if (!handleHash()) {
     UI.screen = 'signin'; UI.mode = 'admin';
     render();
