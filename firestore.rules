@@ -1,16 +1,41 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isOwner() {
+
+    function owner() {
       return request.auth != null
         && request.auth.token.email == 'deepakkanojiya41@gmail.com'
         && request.auth.token.email_verified == true;
     }
-    match /app/{docId} {
-      allow read, write: if isOwner();
+    function signedIn() { return request.auth != null; }
+    function myEmail() { return request.auth.token.email; }
+
+    /* shop settings: readable by any signed-in user, writable by the owner */
+    match /settings/{doc} { allow read: if signedIn(); allow write: if owner(); }
+    match /meta/{doc}     { allow read: if signedIn(); allow write: if owner(); }
+
+    /* a customer may read their own record, the owner reads everything */
+    match /customers/{id} {
+      allow read: if owner() || (signedIn() && resource.data.email == myEmail());
+      allow write: if owner();
     }
-    match /{document=**} {
-      allow read, write: if false;
+
+    /* entries carry customerEmail, so this check costs no extra read */
+    match /entries/{id} {
+      allow read: if owner() || (signedIn() && resource.data.customerEmail == myEmail());
+      allow write: if owner();
     }
+
+    /* pickup requests: a customer may create one, the owner manages them */
+    match /requests/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if owner();
+    }
+
+    /* the old single-document layout stays readable by the owner for rollback */
+    match /app/{doc} { allow read, write: if owner(); }
+
+    match /{document=**} { allow read, write: if false; }
   }
 }

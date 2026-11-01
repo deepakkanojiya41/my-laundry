@@ -672,12 +672,10 @@ const FB = {
   },
 
   /* ---- auth ---- */
+  /* cloud access requires a real signed-in user; anonymous identities are not used */
   async signIn() {
-    try {
-      const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=' + this.key,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ returnSecureToken: true }) });
-      if (r.ok) { const d = await r.json(); this.token = d.idToken; }
-    } catch (e) { }
+    if (window.FBGoogle) { try { await window.FBGoogle.current(); } catch (e) { } }
+    return !!this.token;
   },
 
   /* ---- reads ---- */
@@ -798,8 +796,8 @@ const FB = {
     if (!jobs.length) return;
     this.saving = true; this.status = 'saving';
     try {
-      if (!this.token) { if (window.FBGoogle) { try { await window.FBGoogle.current(); } catch (e) { } } }
       if (!this.token) await this.signIn();
+      if (!this.token) throw new Error('sign in required');
       const seen = new Set();
       let touched = false;
       for (const [kind, key] of jobs) {
@@ -871,7 +869,8 @@ const FB = {
   },
 
   async init() {
-    await this.signIn();
+    if (!this.token) await this.signIn();
+    if (!this.token) { this.status = 'local'; return false; }   /* signed out: no cloud reads */
     const had = await this.load();
     if (!had) { this.online = true; if (this.restoreLocal()) this.status = 'local'; }
     else this.status = 'saved';
@@ -2180,7 +2179,9 @@ function neSave() {
   const doSave = () => {
     const paid = Math.min(Number(NE.paid) || 0, total);
     const e = {
-      id: uid(), no: nextEntryNo(NE.received), customerId: NE.cid, service: items.every(i => i.svc === items[0].svc) ? items[0].svc : 'Mixed',
+      id: uid(), no: nextEntryNo(NE.received), customerId: NE.cid,
+      customerEmail: ((custById(NE.cid) || {}).email || '').toLowerCase(),
+      service: items.every(i => i.svc === items[0].svc) ? items[0].svc : 'Mixed',
       items, status: NE.status, note: NE.note || '', due: NE.due, created: NE.received,
       payments: paid > 0 ? [{ amount: paid, date: todayISO() }] : [], deleted: false, deletedAt: null
     };
@@ -2525,7 +2526,7 @@ function acceptRequest(id) {
     DB.customers.push(c); persist('customer', c.id);
   }
   const price = (DB.rates.find(x => /^shirt$/i.test(x.name)) || { price: { Ironing: 10, 'Dry clean': 80 } }).price[r.service] || 10;
-  const e = { id: uid(), no: nextEntryNo(todayISO()), customerId: c.id, service: r.service, items: [{ name: 'Clothes', qty: r.count || 1, price, svc: r.service }], status: 'Pickup', note: r.note || '', due: dateAdd(r.date || todayISO(), 1), created: todayISO(), payments: [], deleted: false, deletedAt: null };
+  const e = { id: uid(), no: nextEntryNo(todayISO()), customerId: c.id, customerEmail: (c.email || '').toLowerCase(), service: r.service, items: [{ name: 'Clothes', qty: r.count || 1, price, svc: r.service }], status: 'Pickup', note: r.note || '', due: dateAdd(r.date || todayISO(), 1), created: todayISO(), payments: [], deleted: false, deletedAt: null };
   DB.entries.push(e);
   r.status = 'accepted'; persist('request', r.id); persist('entry', e.id);
   render();
