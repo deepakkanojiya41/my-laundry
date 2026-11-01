@@ -3058,6 +3058,18 @@ window.addEventListener('beforeinstallprompt', e => {
   if (UI.screen === 'settings') render();
 });
 window.addEventListener('appinstalled', () => { deferredPrompt = null; installable = false; render(); });
+window.addEventListener('fb-google-ready', () => {
+  if (!window.FBGoogle) return;
+  window.FBGoogle.onChange(async user => {
+    if (!user) {
+      if (DB.session && DB.session.uid) { DB.session = null; UI.mode = 'admin'; UI.screen = 'signin'; NAVSTACK.length = 0; render(); }
+      return;
+    }
+    if (DB.session && DB.session.uid === user.uid) return;
+    const s = sessionFor(user.email, user.uid);
+    if (s) { DB.session = s; enterSession(); }
+  });
+});
 
 /* ---------- deep links (#p= passbook, #r= pickup request) ---------- */
 function handleHash() {
@@ -3089,14 +3101,42 @@ function handleHash() {
 }
 
 /* ---------- boot ---------- */
+function waitForGoogle(ms) {
+  return new Promise(resolve => {
+    if (window.FBGoogle) return resolve(true);
+    const t = setTimeout(() => resolve(!!window.FBGoogle), ms);
+    window.addEventListener('fb-google-ready', () => { clearTimeout(t); resolve(true); }, { once: true });
+  });
+}
+function sessionFor(email, uid) {
+  const e = (email || '').toLowerCase();
+  const admin = (DB.shop.ownerEmail || ADMIN_EMAIL_FALLBACK).toLowerCase();
+  if (e && e === admin) return { type: 'admin', email: e, uid };
+  const c = liveCustomers().find(x => x.email && x.email.toLowerCase() === e);
+  if (c) return { type: 'customer', email: e, uid, customerId: c.id };
+  return null;
+}
+function enterSession() {
+  const s = DB.session;
+  NAVSTACK.length = 0; UI.params = {};
+  if (s.type === 'admin') { UI.mode = 'admin'; UI.screen = 'home'; UI.adminTab = 'home'; }
+  else { UI.mode = 'cust'; UI.preview = false; UI.screen = 'entries'; UI.custTab = 'entries'; UI.params = { cid: s.customerId }; }
+  render(); window.scrollTo(0, 0);
+}
 async function boot() {
   render();
+  await waitForGoogle(2500);
+  let user = null;
+  if (window.FBGoogle) { try { user = await window.FBGoogle.current(); } catch (e) { } }
   const hadRemote = await FB.init();
-  if (hadRemote) { closeAllSheets(); render(); toast('Loaded from the cloud'); }
-  if (!handleHash()) {
-    UI.screen = 'signin'; UI.mode = 'admin';
-    render();
+  if (user) {
+    const s = sessionFor(user.email, user.uid);
+    if (s) DB.session = s;
   }
+  if (hadRemote) { closeAllSheets(); }
+  if (handleHash()) { /* deep link wins */ }
+  else if (DB.session) { enterSession(); toast('Welcome back'); }
+  else { UI.screen = 'signin'; UI.mode = 'admin'; render(); }
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
       reg.update().catch(() => { });
@@ -3123,7 +3163,7 @@ if (document.readyState !== 'loading') boot();
 <script type="module">
 /* ---- real Google sign-in through Firebase Auth ---- */
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 
 const app = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -3131,6 +3171,18 @@ setPersistence(auth, browserLocalPersistence).catch(() => { });
 
 window.FBGoogle = {
   ready: true,
+  async current() {
+    const u = auth.currentUser;
+    if (!u) return null;
+    try { window.FB.token = await u.getIdToken(); } catch (e) { }
+    return { email: u.email || '', name: u.displayName || '', uid: u.uid };
+  },
+  onChange(cb) {
+    onAuthStateChanged(auth, async u => {
+      if (u) { try { window.FB.token = await u.getIdToken(); } catch (e) { } }
+      cb(u ? { email: u.email || '', name: u.displayName || '', uid: u.uid } : null);
+    });
+  },
   async signIn() {
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
