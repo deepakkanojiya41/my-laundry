@@ -625,6 +625,7 @@ const FB = {
   version: '',
   pollTimer: 0,
   lastActivity: Date.now(),
+  loading: false,
   hashes: {},
   remoteTimer: 0,
 
@@ -874,17 +875,20 @@ const FB = {
       if (!raw) return false;
       const d = JSON.parse(raw);
       if (!d || !Array.isArray(d.customers)) return false;
-      if (d.customers.length || (d.entries || []).length) { this.hydrate(d); return true; }
+      if (d.customers.length || (d.entries || []).length) { this.hydrate(d); this.localUsed = true; return true; }
     } catch (e) { }
     return false;
   },
 
   async init() {
+    this.loading = true;
+    if (UI.screen !== 'splash') render();
     if (!this.token) await this.signIn();
-    if (!this.token) { this.status = 'local'; return false; }   /* signed out: no cloud reads */
+    if (!this.token) { this.status = 'local'; this.loading = false; return false; }
     const had = await this.load();
-    if (!had) { this.online = true; if (this.restoreLocal()) this.status = 'local'; }
+    if (!had) { this.online = true; if (!this.localUsed) this.restoreLocal(); this.status = this.localUsed ? 'local' : 'idle'; }
     else this.status = 'saved';
+    this.loading = false;
     this.startStream();
     return had;
   }
@@ -1248,7 +1252,7 @@ function render() {
   const view = $('#view');
   const out = fn() || { html: '', nav: true };
   const html = typeof out === 'string' ? out : out.html;
-  view.innerHTML = html;
+  view.innerHTML = (FB.loading ? `<div class="notice" style="margin-top:10px">Loading your data…</div>` : '') + html;
   view.className = '';
   if (navMode() === 'none') view.classList.add('nonav');
   else view.classList.add('tabbar');
@@ -3407,7 +3411,11 @@ function saveSession(s) {
 }
 async function boot() {
   const cached = cachedSession();
-  if (cached) { DB.session = cached; enterSession(); }
+  if (cached) {
+    DB.session = cached;
+    FB.restoreLocal();          /* instant paint from the last known data */
+    enterSession();
+  }
   else { UI.screen = 'splash'; render(); }
   await waitForGoogle(3000);
   let user = null;
