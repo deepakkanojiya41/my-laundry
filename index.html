@@ -3472,13 +3472,9 @@ async function boot() {
     try {
       const dark = window.matchMedia('(prefers-color-scheme: dark)');
       const paint = () => {
-        const atTop = (window.scrollY || 0) < 40;
-        const navy = dark.matches ? '#9CC3FA' : '#122C63';
-        const surface = dark.matches ? '#0E1A2F' : '#FFFFFF';
-        meta.setAttribute('content', atTop ? navy : surface);
+        meta.setAttribute('content', dark.matches ? '#9CC3FA' : '#122C63');   /* navy, always */
       };
       paint();
-      window.addEventListener('scroll', paint, { passive: true });
       if (dark.addEventListener) dark.addEventListener('change', paint);
     } catch (e) { }
   }
