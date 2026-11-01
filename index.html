@@ -611,54 +611,71 @@ const FIREBASE = {
 };
 window.FIREBASE_CONFIG = FIREBASE;
 const FB = {
-  base: FIREBASE.databaseURL.replace(/\/$/, ''),
-  path: '/app',
+  project: FIREBASE.projectId,
+  key: FIREBASE.apiKey,
+  docPath: 'app/main',
   token: null,
   online: false,
   saving: false,
   dirty: false,
   timer: 0,
-  status: 'idle',        // idle | saving | saved | error | live
-  stream: null,
-  lastWriteStamp: '',
-  remoteTimer: 0,
+  status: 'idle',            // idle | saving | saved | error | live
   lastError: '',
   warned: false,
-  url() {
-    return this.base + this.path + '.json' + (this.token ? '?auth=' + encodeURIComponent(this.token) : '');
+  lastUpdate: '',
+  pollTimer: 0,
+  retryAt: 0,
+  remoteTimer: 0,
+
+  url() { return 'https://firestore.googleapis.com/v1/projects/' + this.project + '/databases/(default)/documents/' + this.docPath; },
+  headers() {
+    const h = { 'Content-Type': 'application/json' };
+    if (this.token) h.Authorization = 'Bearer ' + this.token;
+    return h;
   },
+
+  /* JS -> Firestore typed fields */
+  toFS(v) {
+    if (v === null || v === undefined) return { nullValue: null };
+    if (typeof v === 'string') return { stringValue: v };
+    if (typeof v === 'boolean') return { booleanValue: v };
+    if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+    if (Array.isArray(v)) return { arrayValue: { values: v.map(x => this.toFS(x)) } };
+    if (typeof v === 'object') {
+      const fields = {};
+      Object.keys(v).forEach(k => { fields[k] = this.toFS(v[k]); });
+      return { mapValue: { fields } };
+    }
+    return { stringValue: String(v) };
+  },
+  /* Firestore typed fields -> JS */
+  fromFS(v) {
+    if (!v || typeof v !== 'object') return null;
+    if ('stringValue' in v) return v.stringValue;
+    if ('booleanValue' in v) return v.booleanValue;
+    if ('integerValue' in v) return Number(v.integerValue);
+    if ('doubleValue' in v) return Number(v.doubleValue);
+    if ('nullValue' in v) return null;
+    if ('timestampValue' in v) return v.timestampValue;
+    if ('arrayValue' in v) return (v.arrayValue.values || []).map(x => this.fromFS(x));
+    if ('mapValue' in v) {
+      const out = {}; const f = v.mapValue.fields || {};
+      Object.keys(f).forEach(k => { out[k] = this.fromFS(f[k]); });
+      return out;
+    }
+    return null;
+  },
+
   async signIn() {
     try {
-      const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=' + FIREBASE.apiKey,
+      const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=' + this.key,
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ returnSecureToken: true }) });
       if (r.ok) { const d = await r.json(); this.token = d.idToken; }
-    } catch (e) { /* rules may allow anonymous access anyway */ }
+    } catch (e) { }
   },
-  async load() {
-    try {
-      const r = await fetch(this.url(), { cache: 'no-store' });
-      if (!r.ok) return false;
-      const data = await r.json();
-      if (!data) return false;
-      if (data.customers) DB.customers = data.customers;
-      if (data.entries) DB.entries = data.entries;
-      if (data.requests) DB.requests = data.requests;
-      if (data.rates && data.rates.length) DB.rates = data.rates;
-      if (data.templates) DB.templates = Object.assign(defaultTemplates(), data.templates);
-      if (data.shop) DB.shop = Object.assign(defaultShop(), data.shop);
-      if (data.bin) DB.bin = data.bin;
-      this.online = true;
-      return true;
-    } catch (e) { return false; }
-  },
-  payload() {
-    return {
-      shop: DB.shop, customers: DB.customers, entries: DB.entries, requests: DB.requests,
-      rates: DB.rates, templates: DB.templates, bin: DB.bin, updated: new Date().toISOString()
-    };
-  },
-  applyRemote(data) {
-    if (!data || !Array.isArray(data.customers)) return;
+
+  hydrate(data) {
+    if (!data || !Array.isArray(data.customers)) return false;
     DB.customers = data.customers;
     DB.entries = data.entries || [];
     DB.requests = data.requests || [];
@@ -666,76 +683,53 @@ const FB = {
     if (data.templates) DB.templates = Object.assign(defaultTemplates(), data.templates);
     if (data.shop) DB.shop = Object.assign(defaultShop(), data.shop);
     if (data.bin) DB.bin = data.bin;
-    this.status = 'live';
-    /* never yank the screen while a sheet is open or the user is typing */
-    clearTimeout(this.remoteTimer);
-    this.remoteTimer = setTimeout(() => {
-      if (!sheets.length && !inField(document.activeElement) && UI.screen !== 'signin') render();
-    }, 250);
+    return true;
   },
-  startStream() {
-    if (!window.EventSource || !this.token) return;
-    this.stopStream();
-    const url = this.base + this.path + '.json?auth=' + encodeURIComponent(this.token);
+
+  async load() {
     try {
-      const es = new EventSource(url);
-      es.addEventListener('put', ev => this.onStream(ev));
-      es.addEventListener('patch', ev => this.onStream(ev));
-      es.onopen = () => { this.status = 'live'; if (UI.screen === 'settings') render(); };
-      es.onerror = () => {
-        this.status = this.online ? 'saved' : 'error';
-        /* token can expire after an hour: refresh it and reconnect */
-        const now = Date.now();
-        if (!this.retryAt || now - this.retryAt > 20000) {
-          this.retryAt = now;
-          setTimeout(async () => {
-            try {
-              if (window.FBGoogle) { await window.FBGoogle.current(); }
-              if (!this.token) await this.signIn();
-              this.startStream();
-            } catch (e) { }
-          }, 4000);
-        }
-      };
-      this.stream = es;
-    } catch (e) { }
+      const r = await fetch(this.url(), { headers: this.headers(), cache: 'no-store' });
+      if (r.status === 404) { this.online = true; return false; }
+      if (!r.ok) { this.lastError = 'HTTP ' + r.status; return false; }
+      const d = await r.json();
+      this.lastUpdate = d.updateTime || '';
+      const fields = (d.fields || {}).data;
+      const data = fields ? this.fromFS(fields) : null;
+      this.online = true;
+      return this.hydrate(data);
+    } catch (e) { this.lastError = 'network'; return false; }
   },
-  stopStream() {
-    if (this.stream) { try { this.stream.close(); } catch (e) { } this.stream = null; }
+
+  payload() {
+    return {
+      shop: DB.shop, customers: DB.customers, entries: DB.entries, requests: DB.requests,
+      rates: DB.rates, templates: DB.templates, bin: DB.bin, updated: new Date().toISOString()
+    };
   },
-  onStream(ev) {
-    try {
-      const msg = JSON.parse(ev.data);
-      if (msg.path && msg.path !== '/') return;
-      const data = msg.data;
-      if (!data || data.updated === this.lastWriteStamp) return;   /* our own write coming back */
-      this.applyRemote(data);
-    } catch (e) { }
-  },
+
   async write(retried) {
     if (this.saving) { this.dirty = true; return; }
     this.saving = true;
     this.status = 'saving';
     const payload = this.payload();
-    this.lastWriteStamp = payload.updated;
-    const body = JSON.stringify(payload);
-    try { localStorage.setItem('ml_backup', body); } catch (e) { }
+    try { localStorage.setItem('ml_backup', JSON.stringify(payload)); } catch (e) { }
     try {
-      /* always present a fresh id token, an expired one looks like "permission denied" */
-      if (window.FBGoogle) { try { const u = await window.FBGoogle.current(); if (u && !this.token) await this.signIn(); } catch (e) { } }
-      const r = await fetch(this.url(), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
-      if ((r.status === 401 || r.status === 403) && !retried) {
-        this.saving = false;
-        if (window.FBGoogle) { try { await window.FBGoogle.current(); } catch (e) { } }
-        if (!this.token) await this.signIn();
-        return this.write(true);
-      }
+      if (window.FBGoogle && !this.token) { try { await window.FBGoogle.current(); } catch (e) { } }
+      if (!this.token) await this.signIn();
+      const body = JSON.stringify({ fields: { data: this.toFS(payload) } });
+      const r = await fetch(this.url() + '?updateMask.fieldPaths=data', { method: 'PATCH', headers: this.headers(), body });
       if (r.ok) {
-        this.online = true; this.status = this.stream ? 'live' : 'saved'; this.lastError = ''; this.warned = false;
-        if (!this.stream) this.startStream();
+        const d = await r.json().catch(() => ({}));
+        this.lastUpdate = d.updateTime || '';
+        this.online = true; this.status = 'saved'; this.lastError = ''; this.warned = false;
+      } else if ((r.status === 401 || r.status === 403) && !retried) {
+        this.saving = false;
+        this.token = null;
+        if (window.FBGoogle) { try { await window.FBGoogle.current(); } catch (e) { } }
+        return this.write(true);
       } else {
         let msg = 'HTTP ' + r.status;
-        try { const d = await r.json(); if (d && d.error) msg = d.error; } catch (e) { }
+        try { const d = await r.json(); if (d && d.error && d.error.message) msg = d.error.message; } catch (e) { }
         this.online = false; this.status = 'error'; this.lastError = msg;
         if (!this.warned) { this.warned = true; toast('Cloud save failed: ' + msg, 4200); }
       }
@@ -748,35 +742,59 @@ const FB = {
     if (this.dirty) { this.dirty = false; this.write(); }
     if (UI.screen === 'settings') render();
   },
+
+  /* Firestore has no REST stream here, so poll the document for changes */
+  startStream() {
+    this.stopStream();
+    const tick = async () => {
+      try {
+        const r = await fetch(this.url() + '?mask.fieldPaths=data', { headers: this.headers(), cache: 'no-store' });
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d.updateTime && d.updateTime === this.lastUpdate) return;
+        this.lastUpdate = d.updateTime || '';
+        const fields = (d.fields || {}).data;
+        if (fields) this.applyRemote(this.fromFS(fields));
+      } catch (e) { }
+    };
+    this.pollTimer = setInterval(tick, 4000);
+    this.status = 'live';
+  },
+  stopStream() { if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = 0; } },
+
+  applyRemote(data) {
+    if (!this.hydrate(data)) return;
+    this.status = 'live';
+    clearTimeout(this.remoteTimer);
+    this.remoteTimer = setTimeout(() => {
+      if (!sheets.length && !inField(document.activeElement) && UI.screen !== 'signin') render();
+    }, 250);
+  },
+
+  save() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.write(), 700);
+  },
+
   restoreLocal() {
     try {
       const raw = localStorage.getItem('ml_backup');
       if (!raw) return false;
       const d = JSON.parse(raw);
       if (!d || !d.customers) return false;
-      if (d.customers.length || d.entries.length) {
-        DB.customers = d.customers; DB.entries = d.entries; DB.requests = d.requests || [];
-        if (d.shop) DB.shop = Object.assign(defaultShop(), d.shop);
-        if (d.rates && d.rates.length) DB.rates = d.rates;
-        if (d.templates) DB.templates = Object.assign(defaultTemplates(), d.templates);
-        if (d.bin) DB.bin = d.bin;
-        return true;
-      }
+      if (d.customers.length || d.entries.length) return this.hydrate(d);
     } catch (e) { }
     return false;
   },
-  save() {
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.write(), 700);
-  },
+
   async init() {
     await this.signIn();
     const had = await this.load();
     if (!had) {
-      this.online = true;                       /* empty database, writes will create it */
+      this.online = true;
       if (this.restoreLocal()) this.status = 'local';
     } else this.status = 'saved';
-    if (this.token) this.startStream();
+    this.startStream();
     return had;
   }
 };
