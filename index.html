@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, minimum-scale=1, user-scalable=no">
 <title>My Laundry</title>
 <meta name="description" content="Pickup and delivery laundry management for ironing and dry clean shops.">
-<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0E1A2F" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#122C63">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="My Laundry">
@@ -3467,16 +3466,20 @@ async function boot() {
     }).catch(() => { });
   }
   /* keep the status bar colour in step with the theme */
-  const metas = document.querySelectorAll('meta[name="theme-color"]');
-  if (metas.length) {
+  /* status bar navy while the hero is on screen, white once you scroll into the page */
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
     try {
       const dark = window.matchMedia('(prefers-color-scheme: dark)');
-      const set = () => {
-        const c = dark.matches ? '#0E1A2F' : '#FFFFFF';   /* match the bottom bar, not the hero */
-        metas.forEach(m => { if (!m.getAttribute('media')) m.setAttribute('content', c); });
+      const paint = () => {
+        const atTop = (window.scrollY || 0) < 40;
+        const navy = dark.matches ? '#9CC3FA' : '#122C63';
+        const surface = dark.matches ? '#0E1A2F' : '#FFFFFF';
+        meta.setAttribute('content', atTop ? navy : surface);
       };
-      set();
-      if (dark.addEventListener) dark.addEventListener('change', set);
+      paint();
+      window.addEventListener('scroll', paint, { passive: true });
+      if (dark.addEventListener) dark.addEventListener('change', paint);
     } catch (e) { }
   }
 }
