@@ -286,6 +286,8 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 .sheet-wrap.in .sheet{transform:translateY(0)}
 .sheet-wrap.stacked .sheet{box-shadow:0 -10px 40px rgba(0,0,0,.3), 0 0 0 1px var(--line)}
 .grab{padding:9px 0 3px;display:flex;justify-content:center;cursor:grab;touch-action:none;flex:0 0 auto}
+.sheet-wrap.dragging,.sheet-wrap.dragging *{user-select:none;-webkit-user-select:none}
+.sheet-wrap.dragging .grab{cursor:grabbing}
 .grab i{width:40px;height:4.5px;border-radius:3px;background:var(--line-strong);opacity:.6;display:block}
 .sheet-head{padding:2px 18px 10px;display:flex;align-items:flex-start;gap:10px;flex:0 0 auto;touch-action:none}
 .sheet-head h3{font-size:18px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
@@ -771,36 +773,116 @@ function requestClose() {
 }
 function closeAllSheets() { while (sheets.length) { const t = sheets.pop(); t.wrap.remove(); if (t.onClose) t.onClose(); } lockBody(false); }
 function bindSheetGestures(wrap, sheet) {
-  let startY = 0, dy = 0, dragging = false, t0 = 0;
   const bd = $('.sheet-bd', wrap);
-  const down = e => {
-    if (e.target.closest('button, input, select, textarea, a, .varchip, .qty')) return;
-    dragging = true; startY = e.touches ? e.touches[0].clientY : e.clientY; dy = 0; t0 = Date.now();
+  const body = $('.sheet-body', wrap);
+  const CLOSE_MS = 240;
+  let startY = 0, dy = 0, dragging = false, armed = false, startScroll = 0;
+  let lastY = 0, lastT = 0, velocity = 0, settleT = 0;
+
+  const begin = y => {
+    clearTimeout(settleT);
+    dragging = true; startY = y; dy = 0; velocity = 0;
+    lastY = y; lastT = Date.now();
     sheet.style.transition = 'none';
+    wrap.classList.add('dragging');
   };
-  const move = e => {
+  const follow = y => {
     if (!dragging) return;
-    const y = e.touches ? e.touches[0].clientY : e.clientY;
     dy = Math.max(0, y - startY);
+    const now = Date.now(), dt = now - lastT;
+    if (dt > 6) { velocity = (y - lastY) / dt; lastY = y; lastT = now; }
     sheet.style.transform = `translateY(${dy}px)`;
-    bd.style.opacity = String(Math.max(0, 1 - dy / 320));
+    bd.style.opacity = String(clamp(1 - dy / 340, 0, 1));
   };
-  const up = () => {
-    if (!dragging) return; dragging = false;
-    const fast = dy / Math.max(1, Date.now() - t0) > 0.7;
-    sheet.style.transition = '';
-    if (dy > 110 || (fast && dy > 40)) { requestClose(); }
-    else { sheet.style.transform = ''; bd.style.opacity = ''; }
+  const settle = () => {
+    armed = false;
+    if (!dragging) return;
+    dragging = false;
+    wrap.classList.remove('dragging');
+    const closeAt = Math.min(140, sheet.offsetHeight * 0.26);
+    const shouldClose = dy > closeAt || (velocity > 0.45 && dy > 20);
+    if (shouldClose) {
+      sheet.style.transition = `transform ${CLOSE_MS}ms cubic-bezier(.35,0,.75,.5)`;
+      sheet.style.transform = 'translateY(100%)';
+      bd.style.opacity = '0';
+      requestClose();
+    } else if (dy > 0) {
+      sheet.style.transition = 'transform .3s cubic-bezier(.22,.9,.28,1.02)';
+      sheet.style.transform = '';
+      bd.style.opacity = '';
+      settleT = setTimeout(() => { sheet.style.transition = ''; }, 320);
+    } else {
+      sheet.style.transition = '';
+      sheet.style.transform = '';
+      bd.style.opacity = '';
+    }
   };
-  $$('[data-drag]', wrap).forEach(h => {
-    h.addEventListener('touchstart', down, { passive: true });
-    h.addEventListener('touchmove', move, { passive: true });
-    h.addEventListener('touchend', up);
-    h.addEventListener('mousedown', e => { down(e); const mv = ev => move(ev); const u = () => { up(); window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', u); }; window.addEventListener('mousemove', mv); window.addEventListener('mouseup', u); });
+  const isControl = t => !!(t && t.closest && t.closest('button, input, select, textarea, a, label, .varchip, .qty, .chips'));
+
+  /* which part of the sheet the finger landed on */
+  const zoneOf = t => {
+    if (!t || !t.closest) return 'none';
+    if (t.closest('.grab, .sheet-head')) return 'handle';
+    if (t.closest('.sheet-body')) return 'body';
+    return 'none';
+  };
+
+  const onStart = (y, target) => {
+    if (isControl(target)) return false;
+    const zone = zoneOf(target);
+    if (zone === 'handle') { begin(y); return true; }
+    if (zone === 'body') {
+      /* a body drag only counts when the content is already scrolled to the top */
+      armed = true; startY = y; startScroll = body ? body.scrollTop : 0;
+      lastY = y; lastT = Date.now(); velocity = 0;
+      return true;
+    }
+    return false;
+  };
+  const onMove = (y, ev) => {
+    if (dragging) { follow(y); if (ev.cancelable) ev.preventDefault(); return; }
+    if (!armed) return;
+    if (startScroll > 0) { armed = false; return; }        /* let the body scroll */
+    if (y - startY < 6) return;
+    begin(startY);                                          /* promote to a drag */
+    follow(y);
+    if (ev.cancelable) ev.preventDefault();
+  };
+  const onCancel = () => { dy = 0; velocity = 0; settle(); };
+
+  const onTouchStart = e => {
+    if (e.touches.length > 1) return;
+    onStart(e.touches[0].clientY, e.target);
+  };
+  const onTouchMove = e => {
+    if (!dragging && !armed) return;
+    onMove(e.touches[0].clientY, e);
+  };
+  const onTouchEnd = () => settle();
+
+  sheet.addEventListener('touchstart', onTouchStart, { passive: true });
+  sheet.addEventListener('touchmove', onTouchMove, { passive: false });
+  sheet.addEventListener('touchend', onTouchEnd);
+  sheet.addEventListener('touchcancel', onCancel);
+
+  sheet.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    if (!onStart(e.clientY, e.target)) return;
+    const mv = ev => onMove(ev.clientY, ev);
+    const up = () => {
+      window.removeEventListener('mousemove', mv);
+      window.removeEventListener('mouseup', up);
+      settle();
+    };
+    window.addEventListener('mousemove', mv);
+    window.addEventListener('mouseup', up);
+    if (dragging) e.preventDefault();
   });
+
   bd.addEventListener('click', () => requestClose());
   $('[data-x]', wrap).addEventListener('click', () => requestClose());
 }
+
 
 /* confirm sheet */
 function confirmSheet(o) {
