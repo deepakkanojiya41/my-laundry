@@ -609,6 +609,7 @@ const FIREBASE = {
   messagingSenderId: '64130736720',
   appId: '1:64130736720:web:50c3c3035d8eddafbee755'
 };
+window.FIREBASE_CONFIG = FIREBASE;
 const FB = {
   base: FIREBASE.databaseURL.replace(/\/$/, ''),
   path: '/app',
@@ -673,6 +674,7 @@ const FB = {
 };
 
 function persist(kind, key) { FB.save(); }
+window.FB = FB;
 
 function renumberAll() {
   const byDay = {};
@@ -2429,10 +2431,7 @@ SCREENS.signin = function () {
          <div class="prefix"><span>+91</span><input id="si-phone" inputmode="numeric" maxlength="13" placeholder="10 digit number" value="${esc(SI.phone || '')}"></div></div>
        <button class="btn primary" data-act="siSendOtp">Send OTP</button>`;
 
-  const emailBlock = SI.step === 'email'
-    ? `<div class="field"><label class="label" for="si-email">Email address</label><input class="input" id="si-email" type="email" placeholder="name@email.com" value="${esc(SI.email || '')}"></div>
-       <button class="btn primary" data-act="siEmailGo">Continue</button>`
-    : `<button class="btn" data-act="siGoogle" style="background:var(--surface);color:var(--ink);border-color:var(--line)">${gicon} Continue with Google</button>`;
+  const emailBlock = `<button class="btn" data-act="siGoogle" ${SI.busy ? 'disabled' : ''} style="background:var(--surface);color:var(--ink);border-color:var(--line)">${gicon} ${SI.busy ? 'Signing in…' : 'Continue with Google'}</button>`;
 
   return {
     html: hero + `<div style="padding:0 2px">
@@ -2806,7 +2805,7 @@ Object.assign(ACTIONS, {
   rmQr: () => { DB.shop.qrImage = null; persist('shop'); requestClose(); setTimeout(() => { openMyQr(); toast('QR image removed'); }, 100); },
   signOutPrompt: () => signOut(),
   signOutCust: () => {
-    confirmSheet({ title: 'Sign out?', msg: 'You will go back to the sign-in screen.', label: 'Sign out', danger: true, onOk: () => { DB.session = null; UI.mode = 'admin'; UI.screen = 'signin'; UI.params = {}; NAVSTACK.length = 0; render(); } });
+    confirmSheet({ title: 'Sign out?', msg: 'You will go back to the sign-in screen.', label: 'Sign out', danger: true, onOk: () => { DB.session = null; UI.mode = 'admin'; UI.screen = 'signin'; UI.params = {}; NAVSTACK.length = 0; if (window.FBGoogle) window.FBGoogle.signOut(); render(); } });
   },
   switchToCustomer: () => openPreviewCustomer(),
   exitPreview: () => exitPreview(),
@@ -2882,7 +2881,42 @@ Object.assign(ACTIONS, {
     UI.mode = 'admin'; UI.screen = 'home'; UI.adminTab = 'home'; UI.params = {}; NAVSTACK.length = 0;
     render(); window.scrollTo(0, 0); toast('Welcome back');
   },
-  siGoogle: () => { SI.step = 'email'; SI.err = ''; render(); },
+  siGoogle: async () => {
+    SI.err = ''; SI.busy = true; render();
+    if (!window.FBGoogle) {
+      SI.busy = false;
+      SI.err = 'Google sign-in is still loading. Check your connection and try again.';
+      render(); return;
+    }
+    try {
+      const user = await window.FBGoogle.signIn();
+      SI.busy = false;
+      const email = (user.email || '').toLowerCase();
+      const admin = (DB.shop.ownerEmail || ADMIN_EMAIL_FALLBACK).toLowerCase();
+      if (email === admin) {
+        DB.session = { type: 'admin', email, uid: user.uid };
+        await FB.load();
+        UI.mode = 'admin'; UI.screen = 'home'; UI.adminTab = 'home'; UI.params = {}; NAVSTACK.length = 0;
+        render(); window.scrollTo(0, 0); toast('Signed in as owner'); return;
+      }
+      const c = liveCustomers().find(x => x.email && x.email.toLowerCase() === email);
+      if (c) {
+        DB.session = { type: 'customer', email, uid: user.uid, customerId: c.id };
+        UI.mode = 'cust'; UI.preview = false; UI.custTab = 'entries'; UI.screen = 'entries'; UI.params = { cid: c.id }; NAVSTACK.length = 0;
+        render(); window.scrollTo(0, 0); toast('Welcome, ' + c.name.split(' ')[0]); return;
+      }
+      SI.err = 'No account found for ' + email + '. Ask your laundry shop to add it to your profile.';
+      render();
+    } catch (e) {
+      SI.busy = false;
+      const code = (e && e.code) || '';
+      SI.err = code === 'auth/popup-closed-by-user' ? 'Sign-in cancelled.'
+        : code === 'auth/unauthorized-domain' ? 'This domain is not authorised in Firebase Auth settings.'
+        : code === 'auth/operation-not-allowed' ? 'Google sign-in is not enabled in the Firebase console.'
+        : 'Could not sign in with Google. ' + (e && e.message ? e.message : '');
+      render();
+    }
+  },
   siEmailGo: () => {
     const el = $('#si-email'); const email = (el ? el.value : '').trim().toLowerCase();
     if (!validEmail(email)) { SI.err = 'Enter a valid email address.'; render(); return; }
@@ -3085,6 +3119,32 @@ async function boot() {
 document.addEventListener('DOMContentLoaded', boot);
 if (document.readyState !== 'loading') boot();
 
+</script>
+<script type="module">
+/* ---- real Google sign-in through Firebase Auth ---- */
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+
+const app = initializeApp(window.FIREBASE_CONFIG);
+const auth = getAuth(app);
+setPersistence(auth, browserLocalPersistence).catch(() => { });
+
+window.FBGoogle = {
+  ready: true,
+  async signIn() {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const res = await signInWithPopup(auth, provider);
+    const token = await res.user.getIdToken();
+    window.FB.token = token;
+    return { email: res.user.email || '', name: res.user.displayName || '', uid: res.user.uid };
+  },
+  async signOut() {
+    try { await signOut(auth); } catch (e) { }
+    window.FB.token = null;
+  }
+};
+window.dispatchEvent(new Event('fb-google-ready'));
 </script>
 </body>
 </html>
