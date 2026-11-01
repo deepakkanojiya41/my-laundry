@@ -613,30 +613,29 @@ window.FIREBASE_CONFIG = FIREBASE;
 const FB = {
   project: FIREBASE.projectId,
   key: FIREBASE.apiKey,
-  docPath: 'app/main',
+  base: 'https://firestore.googleapis.com/v1/projects/' + FIREBASE.projectId + '/databases/(default)/documents/',
   token: null,
   online: false,
   saving: false,
-  dirty: false,
+  queue: [],
   timer: 0,
-  status: 'idle',            // idle | saving | saved | error | live
+  status: 'idle',
   lastError: '',
   warned: false,
-  lastUpdate: '',
+  version: '',
   pollTimer: 0,
   lastActivity: Date.now(),
-  lastHash: '',
-  retryAt: 0,
+  hashes: {},
   remoteTimer: 0,
 
-  url() { return 'https://firestore.googleapis.com/v1/projects/' + this.project + '/databases/(default)/documents/' + this.docPath; },
+  docUrl(path) { return this.base + path; },
   headers() {
     const h = { 'Content-Type': 'application/json' };
     if (this.token) h.Authorization = 'Bearer ' + this.token;
     return h;
   },
 
-  /* JS -> Firestore typed fields */
+  /* ---- typed value conversion ---- */
   toFS(v) {
     if (v === null || v === undefined) return { nullValue: null };
     if (typeof v === 'string') return { stringValue: v };
@@ -650,7 +649,6 @@ const FB = {
     }
     return { stringValue: String(v) };
   },
-  /* Firestore typed fields -> JS */
   fromFS(v) {
     if (!v || typeof v !== 'object') return null;
     if ('stringValue' in v) return v.stringValue;
@@ -667,7 +665,13 @@ const FB = {
     }
     return null;
   },
+  fieldsToObj(fields) {
+    const out = {};
+    Object.keys(fields || {}).forEach(k => { out[k] = this.fromFS(fields[k]); });
+    return out;
+  },
 
+  /* ---- auth ---- */
   async signIn() {
     try {
       const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=' + this.key,
@@ -676,121 +680,178 @@ const FB = {
     } catch (e) { }
   },
 
-  hydrate(data) {
-    if (!data || !Array.isArray(data.customers)) return false;
-    DB.customers = data.customers;
-    DB.entries = data.entries || [];
-    DB.requests = data.requests || [];
-    if (data.rates && data.rates.length) DB.rates = data.rates;
-    if (data.templates) DB.templates = Object.assign(defaultTemplates(), data.templates);
-    if (data.shop) DB.shop = Object.assign(defaultShop(), data.shop);
-    if (data.bin) DB.bin = data.bin;
+  /* ---- reads ---- */
+  async readDoc(path) {
+    const r = await fetch(this.docUrl(path), { headers: this.headers(), cache: 'no-store' });
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    return { id: path.split('/').pop(), data: this.fieldsToObj(d.fields), updateTime: d.updateTime };
+  },
+  async readCol(name) {
+    const out = [];
+    let pageToken = '';
+    do {
+      const r = await fetch(this.docUrl(name) + '?pageSize=300' + (pageToken ? '&pageToken=' + pageToken : ''), { headers: this.headers(), cache: 'no-store' });
+      if (r.status === 404) return out;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      (d.documents || []).forEach(doc => out.push(Object.assign({ id: doc.name.split('/').pop() }, this.fieldsToObj(doc.fields))));
+      pageToken = d.nextPageToken || '';
+    } while (pageToken);
+    return out;
+  },
+
+  hydrate(parts) {
+    if (parts.shop) DB.shop = Object.assign(defaultShop(), parts.shop);
+    if (parts.rates && parts.rates.length) DB.rates = parts.rates;
+    if (parts.templates) DB.templates = Object.assign(defaultTemplates(), parts.templates);
+    DB.customers = parts.customers || [];
+    DB.entries = parts.entries || [];
+    DB.requests = parts.requests || [];
+    DB.bin = parts.bin || { customers: [], entries: [] };
     return true;
   },
 
   async load() {
     try {
-      const r = await fetch(this.url(), { headers: this.headers(), cache: 'no-store' });
-      if (r.status === 404) { this.online = true; return false; }
-      if (!r.ok) { this.lastError = 'HTTP ' + r.status; return false; }
-      const d = await r.json();
-      this.lastUpdate = d.updateTime || '';
-      const fields = (d.fields || {}).data;
-      const data = fields ? this.fromFS(fields) : null;
+      const [shop, rates, templates, customers, entries, requests, bin, meta] = await Promise.all([
+        this.readDoc('settings/shop'), this.readDoc('settings/rates'), this.readDoc('settings/templates'),
+        this.readCol('customers'), this.readCol('entries'), this.readCol('requests'), this.readDoc('settings/bin'),
+        this.readDoc('meta/version')
+      ]);
       this.online = true;
-      return this.hydrate(data);
-    } catch (e) { this.lastError = 'network'; return false; }
+      this.version = (meta && meta.data && meta.data.v) || '';
+      const empty = !shop && !customers.length && !entries.length;
+      if (empty) { await this.migrateLegacy(); return false; }
+      this.hydrate({
+        shop: shop && shop.data, rates: rates && rates.data && rates.data.items,
+        templates: templates && templates.data, customers, entries, requests, bin: bin && bin.data
+      });
+      return true;
+    } catch (e) { this.lastError = e.message || 'network'; return false; }
   },
 
-  payload() {
-    return {
-      shop: DB.shop, customers: DB.customers, entries: DB.entries, requests: DB.requests,
-      rates: DB.rates, templates: DB.templates, bin: DB.bin, updated: new Date().toISOString()
-    };
-  },
-
-  async write(retried) {
-    if (this.saving) { this.dirty = true; return; }
-    this.saving = true;
-    this.status = 'saving';
-    const payload = this.payload();
-    const hash = JSON.stringify([payload.shop, payload.customers, payload.entries, payload.requests, payload.rates, payload.templates, payload.bin]);
-    if (hash === this.lastHash && this.online) {
-      this.saving = false; this.status = this.pollTimer ? 'live' : 'saved';
-      return;                                   /* nothing changed: do not bill a write */
-    }
-    try { localStorage.setItem('ml_backup', JSON.stringify(payload)); } catch (e) { }
+  /* one-time: move the old single document into collections */
+  async migrateLegacy() {
     try {
-      if (window.FBGoogle && !this.token) { try { await window.FBGoogle.current(); } catch (e) { } }
+      const legacy = await this.readDoc('app/main');
+      const data = legacy && legacy.data && legacy.data.data;
+      if (!data || !Array.isArray(data.customers)) return false;
+      this.hydrate({ shop: data.shop, rates: data.rates, templates: data.templates, customers: data.customers, entries: data.entries, requests: data.requests, bin: data.bin });
+      await this.syncAll(true);
+      toast('Moved to the new database layout');
+      return true;
+    } catch (e) { return false; }
+  },
+
+  /* ---- writes ---- */
+  async writeDoc(path, obj) {
+    const hash = JSON.stringify(obj);
+    if (this.hashes[path] === hash) return true;              /* unchanged: no write */
+    const body = JSON.stringify({ fields: this.toFS(obj).mapValue.fields });
+    const r = await fetch(this.docUrl(path), { method: 'PATCH', headers: this.headers(), body });
+    if (r.ok) { this.hashes[path] = hash; return true; }
+    if (r.status === 401 || r.status === 403) { this.token = null; throw new Error('auth'); }
+    let msg = 'HTTP ' + r.status;
+    try { const d = await r.json(); if (d.error && d.error.message) msg = d.error.message; } catch (e) { }
+    throw new Error(msg);
+  },
+  async bumpVersion() {
+    const v = String(Date.now());
+    await this.writeDoc('meta/version', { v });
+    this.version = v;
+  },
+  docFor(kind, id) {
+    if (kind === 'customer') { const c = custById(id); return c ? ['customers/' + id, c] : null; }
+    if (kind === 'entry') { const e = entryById(id); return e ? ['entries/' + id, e] : null; }
+    if (kind === 'request') { const r = DB.requests.find(x => x.id === id); return r ? ['requests/' + id, r] : null; }
+    return null;
+  },
+  async writeOne(kind, id) {
+    const d = this.docFor(kind, id);
+    if (!d) return;
+    await this.writeDoc(d[0], d[1]);
+  },
+  async syncAll(silent) {
+    const jobs = [
+      this.writeDoc('settings/shop', DB.shop),
+      this.writeDoc('settings/rates', { items: DB.rates }),
+      this.writeDoc('settings/templates', DB.templates),
+      this.writeDoc('settings/bin', DB.bin)
+    ];
+    DB.customers.forEach(c => jobs.push(this.writeDoc('customers/' + c.id, c)));
+    DB.entries.forEach(e => jobs.push(this.writeDoc('entries/' + e.id, e)));
+    DB.requests.forEach(r => jobs.push(this.writeDoc('requests/' + r.id, r)));
+    await Promise.all(jobs);
+    await this.bumpVersion();
+    if (!silent) toast('Saved to the cloud');
+  },
+
+  save(kind, key) {
+    if (kind) this.queue.push([kind, key]);
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.flush(), 600);
+  },
+  async flush() {
+    const jobs = this.queue.splice(0);
+    if (!jobs.length) return;
+    this.saving = true; this.status = 'saving';
+    try {
+      if (!this.token) { if (window.FBGoogle) { try { await window.FBGoogle.current(); } catch (e) { } } }
       if (!this.token) await this.signIn();
-      const body = JSON.stringify({ fields: { data: this.toFS(payload) } });
-      const r = await fetch(this.url() + '?updateMask.fieldPaths=data', { method: 'PATCH', headers: this.headers(), body });
-      if (r.ok) {
-        const d = await r.json().catch(() => ({}));
-        this.lastUpdate = d.updateTime || '';
-        this.online = true; this.status = this.pollTimer ? 'live' : 'saved';
-        this.lastError = ''; this.warned = false; this.lastHash = hash;
-      } else if ((r.status === 401 || r.status === 403) && !retried) {
-        this.saving = false;
-        this.token = null;
-        if (window.FBGoogle) { try { await window.FBGoogle.current(); } catch (e) { } }
-        return this.write(true);
-      } else {
-        let msg = 'HTTP ' + r.status;
-        try { const d = await r.json(); if (d && d.error && d.error.message) msg = d.error.message; } catch (e) { }
-        this.online = false; this.status = 'error'; this.lastError = msg;
-        if (!this.warned) { this.warned = true; toast('Cloud save failed: ' + msg, 4200); }
+      const seen = new Set();
+      let touched = false;
+      for (const [kind, key] of jobs) {
+        const tag = kind + ':' + (key || '');
+        if (seen.has(tag)) continue;
+        seen.add(tag);
+        if (kind === 'shop') { await this.writeDoc('settings/shop', DB.shop); touched = true; }
+        else if (kind === 'rates') { await this.writeDoc('settings/rates', { items: DB.rates }); touched = true; }
+        else if (kind === 'templates') { await this.writeDoc('settings/templates', DB.templates); touched = true; }
+        else if (kind === 'bin') { await this.writeDoc('settings/bin', DB.bin); touched = true; }
+        else if (kind === 'all') { await this.syncAll(true); touched = false; }
+        else if (key) { await this.writeOne(kind, key); touched = true; }
       }
+      if (touched) await this.bumpVersion();
+      this.online = true; this.status = this.pollTimer ? 'live' : 'saved';
+      this.lastError = ''; this.warned = false;
+      try { localStorage.setItem('ml_backup', JSON.stringify(DB)); } catch (e) { }
     } catch (e) {
-      this.online = false; this.status = 'error';
-      this.lastError = 'network — saved on this device only';
-      if (!this.warned) { this.warned = true; toast('Offline: saved on this device only', 3200); }
+      this.online = false; this.status = 'error'; this.lastError = e.message || 'network';
+      try { localStorage.setItem('ml_backup', JSON.stringify(DB)); } catch (er) { }
+      if (!this.warned) { this.warned = true; toast('Cloud save failed: ' + this.lastError, 4200); }
     }
     this.saving = false;
-    if (this.dirty) { this.dirty = false; this.write(); }
     if (UI.screen === 'settings') render();
   },
 
-  /* Firestore has no REST stream here, so poll the document — but only when it pays off */
+  /* ---- change detection: one cheap read of meta/version ---- */
   pollDelay() {
-    if (document.visibilityState === 'hidden') return 0;                 /* tab in background: stop */
-    const idle = Date.now() - this.lastActivity;
-    return idle < 60000 ? 5000 : 15000;                                   /* back off when nobody is using it */
+    if (document.visibilityState === 'hidden') return 0;
+    return (Date.now() - this.lastActivity) < 60000 ? 5000 : 15000;
   },
   schedulePoll(ms) {
-    clearTimeout(this.pollTimer);
-    this.pollTimer = 0;
+    clearTimeout(this.pollTimer); this.pollTimer = 0;
     if (!ms) return;
-    this.pollTimer = setTimeout(async () => {
-      await this.tick();
-      this.schedulePoll(this.pollDelay());
-    }, ms);
+    this.pollTimer = setTimeout(async () => { await this.tick(); this.schedulePoll(this.pollDelay()); }, ms);
   },
   async tick() {
     if (document.visibilityState === 'hidden') return;
     try {
-      const r = await fetch(this.url() + '?mask.fieldPaths=data', { headers: this.headers(), cache: 'no-store' });
-      if (!r.ok) return;
-      const d = await r.json();
-      if (d.updateTime && d.updateTime === this.lastUpdate) return;
-      this.lastUpdate = d.updateTime || '';
-      const fields = (d.fields || {}).data;
-      if (fields) this.applyRemote(this.fromFS(fields));
+      const meta = await this.readDoc('meta/version');
+      const v = (meta && meta.data && meta.data.v) || '';
+      if (v && v !== this.version) {
+        this.version = v;
+        await this.load();
+        this.applyRemote();
+      }
     } catch (e) { }
   },
-  startStream() {
-    this.stopStream();
-    this.status = 'live';
-    this.schedulePoll(this.pollDelay());
-  },
+  startStream() { this.stopStream(); this.status = 'live'; this.schedulePoll(this.pollDelay()); },
   stopStream() { clearTimeout(this.pollTimer); this.pollTimer = 0; },
-  touch() {
-    this.lastActivity = Date.now();
-    if (!this.pollTimer && this.status === 'live') this.schedulePoll(1200);
-  },
-
-  applyRemote(data) {
-    if (!this.hydrate(data)) return;
+  touch() { this.lastActivity = Date.now(); if (!this.pollTimer && this.status === 'live') this.schedulePoll(1200); },
+  applyRemote() {
     this.status = 'live';
     clearTimeout(this.remoteTimer);
     this.remoteTimer = setTimeout(() => {
@@ -798,18 +859,13 @@ const FB = {
     }, 250);
   },
 
-  save() {
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.write(), 700);
-  },
-
   restoreLocal() {
     try {
       const raw = localStorage.getItem('ml_backup');
       if (!raw) return false;
       const d = JSON.parse(raw);
-      if (!d || !d.customers) return false;
-      if (d.customers.length || d.entries.length) return this.hydrate(d);
+      if (!d || !Array.isArray(d.customers)) return false;
+      if (d.customers.length || (d.entries || []).length) { this.hydrate(d); return true; }
     } catch (e) { }
     return false;
   },
@@ -817,16 +873,14 @@ const FB = {
   async init() {
     await this.signIn();
     const had = await this.load();
-    if (!had) {
-      this.online = true;
-      if (this.restoreLocal()) this.status = 'local';
-    } else this.status = 'saved';
+    if (!had) { this.online = true; if (this.restoreLocal()) this.status = 'local'; }
+    else this.status = 'saved';
     this.startStream();
     return had;
   }
 };
 
-function persist(kind, key) { FB.save(); }
+function persist(kind, key) { FB.save(kind, key); }
 window.FB = FB;
 
 function renumberAll() {
@@ -2457,7 +2511,7 @@ function openRequestForm(pre) {
         if (!name) return toast('Name is required');
         if (mobile && !validPhone(mobile)) return toast('Mobile must be 10 digits');
         DB.requests.push({ id: uid(), name, mobile, date: $('#rq-date', w).value || todayISO(), slot, count: Number($('#rq-count', w).value) || 0, service: svc, address: $('#rq-addr', w).value.trim(), note: $('#rq-note', w).value.trim(), status: 'requested', created: todayISO() });
-        persist('requests');
+        persist('request', DB.requests[DB.requests.length - 1].id);
         requestClose(); setTimeout(() => { toast('Request added'); UI.ordersSeg = 'requests'; render(); }, 80);
       });
     }
@@ -2473,7 +2527,7 @@ function acceptRequest(id) {
   const price = (DB.rates.find(x => /^shirt$/i.test(x.name)) || { price: { Ironing: 10, 'Dry clean': 80 } }).price[r.service] || 10;
   const e = { id: uid(), no: nextEntryNo(todayISO()), customerId: c.id, service: r.service, items: [{ name: 'Clothes', qty: r.count || 1, price, svc: r.service }], status: 'Pickup', note: r.note || '', due: dateAdd(r.date || todayISO(), 1), created: todayISO(), payments: [], deleted: false, deletedAt: null };
   DB.entries.push(e);
-  r.status = 'accepted'; persist('requests'); persist('entry', e.id);
+  r.status = 'accepted'; persist('request', r.id); persist('entry', e.id);
   render();
   toast('Request accepted · entry ' + String(e.no).padStart(2, '0'));
   snack('Send a confirmation to ' + r.name.split(' ')[0] + '?', 'WhatsApp', () => {
@@ -2836,7 +2890,7 @@ Object.assign(ACTIONS, {
   acceptRequest: t => acceptRequest(t.dataset.id),
   rejectRequest: t => {
     const r = DB.requests.find(x => x.id === t.dataset.id); if (!r) return;
-    r.status = 'rejected'; persist('requests'); render();
+    r.status = 'rejected'; persist('request', r.id); render();
     snack('Reply to ' + r.name.split(' ')[0] + '?', 'WhatsApp', () => openWa(r.mobile, `Namaste ${r.name.split(' ')[0]}, sorry we cannot take the pickup on ${fmtD(r.date)} (${r.slot}). Please suggest another day.\n— ${DB.shop.name}`));
   },
 
@@ -3364,9 +3418,12 @@ async function boot() {
   if (handleHash()) { /* deep link wins */ }
   else if (DB.session) {
     saveSession(DB.session);
-    if (UI.screen !== 'home' && UI.screen !== 'entries') enterSession();
-    else render();
-  } else { UI.screen = 'signin'; UI.mode = 'admin'; render(); }
+    if (UI.screen === 'splash') enterSession(); else render();
+  } else if (UI.screen === 'splash') {
+    UI.screen = 'signin'; UI.mode = 'admin'; render();
+  } else {
+    render();                       /* the user already navigated: do not reset their screen */
+  }
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
       reg.update().catch(() => { });
