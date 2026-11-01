@@ -618,6 +618,9 @@ const FB = {
   saving: false,
   dirty: false,
   timer: 0,
+  status: 'idle',        // idle | saving | saved | error
+  lastError: '',
+  warned: false,
   url() {
     return this.base + this.path + '.json' + (this.token ? '?auth=' + encodeURIComponent(this.token) : '');
   },
@@ -654,12 +657,44 @@ const FB = {
   async write() {
     if (this.saving) { this.dirty = true; return; }
     this.saving = true;
+    this.status = 'saving';
+    const body = JSON.stringify(this.payload());
+    try { localStorage.setItem('ml_backup', body); } catch (e) { }
     try {
-      const r = await fetch(this.url(), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.payload()) });
-      if (r.ok) { this.online = true; } else { this.online = false; }
-    } catch (e) { this.online = false; }
+      const r = await fetch(this.url(), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+      if (r.ok) {
+        this.online = true; this.status = 'saved'; this.lastError = ''; this.warned = false;
+      } else {
+        let msg = 'HTTP ' + r.status;
+        try { const d = await r.json(); if (d && d.error) msg = d.error; } catch (e) { }
+        this.online = false; this.status = 'error'; this.lastError = msg;
+        if (!this.warned) { this.warned = true; toast('Cloud save failed: ' + msg, 4200); }
+      }
+    } catch (e) {
+      this.online = false; this.status = 'error';
+      this.lastError = 'network — saved on this device only';
+      if (!this.warned) { this.warned = true; toast('Offline: saved on this device only', 3200); }
+    }
     this.saving = false;
     if (this.dirty) { this.dirty = false; this.write(); }
+    if (UI.screen === 'settings') render();
+  },
+  restoreLocal() {
+    try {
+      const raw = localStorage.getItem('ml_backup');
+      if (!raw) return false;
+      const d = JSON.parse(raw);
+      if (!d || !d.customers) return false;
+      if (d.customers.length || d.entries.length) {
+        DB.customers = d.customers; DB.entries = d.entries; DB.requests = d.requests || [];
+        if (d.shop) DB.shop = Object.assign(defaultShop(), d.shop);
+        if (d.rates && d.rates.length) DB.rates = d.rates;
+        if (d.templates) DB.templates = Object.assign(defaultTemplates(), d.templates);
+        if (d.bin) DB.bin = d.bin;
+        return true;
+      }
+    } catch (e) { }
+    return false;
   },
   save() {
     clearTimeout(this.timer);
@@ -668,7 +703,10 @@ const FB = {
   async init() {
     await this.signIn();
     const had = await this.load();
-    if (!had) this.online = true;    /* empty database, writes will create it */
+    if (!had) {
+      this.online = true;                       /* empty database, writes will create it */
+      if (this.restoreLocal()) this.status = 'local';
+    } else this.status = 'saved';
     return had;
   }
 };
@@ -1609,6 +1647,7 @@ SCREENS.settings = function () {
         srow('link', 'Get passbook links', '', 'passbookLinks')
       ].join(''))}
     ${sec('Data', [
+        srow('refresh', 'Cloud sync', FB.status === 'saved' ? 'Saved' : FB.status === 'saving' ? 'Saving…' : FB.status === 'error' ? 'Failed' : FB.status === 'local' ? 'Device only' : 'Idle', 'cloudSync'),
         srow('trash', 'Recycle bin', String(DB.bin.customers.length + DB.bin.entries.length), 'goRecycle'),
         srow('download', 'Backup and restore', '', 'backup'),
         srow('refresh', 'Reset all data', '', 'resetData', null, true)
@@ -2810,6 +2849,22 @@ Object.assign(ACTIONS, {
   switchToCustomer: () => openPreviewCustomer(),
   exitPreview: () => exitPreview(),
   passbookLinks: () => openPassbookLinks(),
+  cloudSync: async () => {
+    if (window.FBGoogle) { try { const u = await window.FBGoogle.current(); if (u) { } } catch (e) { } }
+    FB.warned = false;
+    await FB.write();
+    if (FB.status === 'saved') toast('Saved to the cloud');
+    else openSheet({
+      title: 'Cloud save failed',
+      body: `<div class="card"><div class="h3">Reason</div><div class="sub" style="margin-top:4px">${esc(FB.lastError || 'unknown')}</div></div>
+        <div class="card"><div class="h3">Check these</div><div class="sub" style="margin-top:4px;line-height:1.6">
+        1. Realtime Database rules allow <code>auth != null</code> (or <code>true</code> for testing).<br>
+        2. Authentication → Anonymous is enabled, or you are signed in with Google.<br>
+        3. The database exists in the same project (Realtime Database, not Firestore).</div></div>`,
+      foot: `<button class="btn primary" data-close2>OK</button>`,
+      onMount: w => { $('[data-close2]', w).addEventListener('click', () => requestClose()); }
+    });
+  },
   backup: () => openRestore(),
   backupNow: () => doBackup(),
   resetData: () => doReset(),
