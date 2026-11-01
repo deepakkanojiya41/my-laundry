@@ -45,6 +45,10 @@
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
+/* text copying is blocked across the app; form fields stay usable */
+html,body{-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,textarea,select,[contenteditable="true"]{-webkit-user-select:text;-moz-user-select:text;user-select:text}
+img,svg{-webkit-user-drag:none;user-select:none}
 body{
   margin:0;background:var(--bg);color:var(--ink);
   font-family:Figtree,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -1091,6 +1095,32 @@ document.addEventListener('click', e => {
   }
   if (e.target.closest('[data-snack]')) { const f = snackFn; hideSnack(); if (f) f(); }
 });
+/* ---------- copying: app text cannot be selected or copied ---------- */
+const inField = t => !!(t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]'));
+document.addEventListener('copy', e => {
+  if (inField(e.target)) return;
+  e.preventDefault();
+  if (e.clipboardData) e.clipboardData.setData('text/plain', '');
+  toast('Copying is disabled in this app', 1800);
+});
+document.addEventListener('cut', e => {
+  if (inField(e.target)) return;
+  e.preventDefault();
+  if (e.clipboardData) e.clipboardData.setData('text/plain', '');
+});
+document.addEventListener('contextmenu', e => {
+  if (inField(e.target)) return;          /* long-press / right click menu off */
+  e.preventDefault();
+});
+document.addEventListener('selectstart', e => {
+  if (inField(e.target)) return;
+  e.preventDefault();
+});
+document.addEventListener('dragstart', e => {
+  if (inField(e.target)) return;
+  e.preventDefault();
+});
+
 function rerenderKeepFocus() {
   const a = document.activeElement; const id = a && a.id; let pos = 0;
   try { pos = a.selectionStart; } catch (err) { }
@@ -1853,7 +1883,7 @@ function neSave() {
     const btn = $('#neSave'); if (btn) { btn.disabled = true; }
     requestClose();
     setTimeout(() => {
-      const c = custById(e.customerId);
+      const c = custById(e.customerId) || { name: 'customer', phone: '' };
       toast('Entry ' + String(e.no).padStart(2, '0') + ' saved');
       snack('Send the entry receipt to ' + (c.name.split(' ')[0]) + '?', 'WhatsApp', () => {
         const ctx = customerCtx(c, { clothesCount: String(clothes), totalClothes: money(total), rate: money(items[0].price) });
