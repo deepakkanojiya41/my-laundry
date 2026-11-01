@@ -1197,6 +1197,7 @@ function popLayer() {
   if (NAVSTACK.length) {
     const p = NAVSTACK.pop();
     UI.screen = p.screen; UI.params = p.params || {}; UI.mode = p.mode || UI.mode;
+    UI.dir = -1; pendingAnim = true;        /* going back slides in from the other side */
     render(); window.scrollTo(0, 0); return true;
   }
   return false;
