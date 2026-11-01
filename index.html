@@ -618,7 +618,10 @@ const FB = {
   saving: false,
   dirty: false,
   timer: 0,
-  status: 'idle',        // idle | saving | saved | error
+  status: 'idle',        // idle | saving | saved | error | live
+  stream: null,
+  lastWriteStamp: '',
+  remoteTimer: 0,
   lastError: '',
   warned: false,
   url() {
@@ -654,11 +657,68 @@ const FB = {
       rates: DB.rates, templates: DB.templates, bin: DB.bin, updated: new Date().toISOString()
     };
   },
+  applyRemote(data) {
+    if (!data || !Array.isArray(data.customers)) return;
+    DB.customers = data.customers;
+    DB.entries = data.entries || [];
+    DB.requests = data.requests || [];
+    if (data.rates && data.rates.length) DB.rates = data.rates;
+    if (data.templates) DB.templates = Object.assign(defaultTemplates(), data.templates);
+    if (data.shop) DB.shop = Object.assign(defaultShop(), data.shop);
+    if (data.bin) DB.bin = data.bin;
+    this.status = 'live';
+    /* never yank the screen while a sheet is open or the user is typing */
+    clearTimeout(this.remoteTimer);
+    this.remoteTimer = setTimeout(() => {
+      if (!sheets.length && !inField(document.activeElement) && UI.screen !== 'signin') render();
+    }, 250);
+  },
+  startStream() {
+    if (!window.EventSource || !this.token) return;
+    this.stopStream();
+    const url = this.base + this.path + '.json?auth=' + encodeURIComponent(this.token);
+    try {
+      const es = new EventSource(url);
+      es.addEventListener('put', ev => this.onStream(ev));
+      es.addEventListener('patch', ev => this.onStream(ev));
+      es.onopen = () => { this.status = 'live'; if (UI.screen === 'settings') render(); };
+      es.onerror = () => {
+        this.status = this.online ? 'saved' : 'error';
+        /* token can expire after an hour: refresh it and reconnect */
+        const now = Date.now();
+        if (!this.retryAt || now - this.retryAt > 20000) {
+          this.retryAt = now;
+          setTimeout(async () => {
+            try {
+              if (window.FBGoogle) { await window.FBGoogle.current(); }
+              if (!this.token) await this.signIn();
+              this.startStream();
+            } catch (e) { }
+          }, 4000);
+        }
+      };
+      this.stream = es;
+    } catch (e) { }
+  },
+  stopStream() {
+    if (this.stream) { try { this.stream.close(); } catch (e) { } this.stream = null; }
+  },
+  onStream(ev) {
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.path && msg.path !== '/') return;
+      const data = msg.data;
+      if (!data || data.updated === this.lastWriteStamp) return;   /* our own write coming back */
+      this.applyRemote(data);
+    } catch (e) { }
+  },
   async write(retried) {
     if (this.saving) { this.dirty = true; return; }
     this.saving = true;
     this.status = 'saving';
-    const body = JSON.stringify(this.payload());
+    const payload = this.payload();
+    this.lastWriteStamp = payload.updated;
+    const body = JSON.stringify(payload);
     try { localStorage.setItem('ml_backup', body); } catch (e) { }
     try {
       /* always present a fresh id token, an expired one looks like "permission denied" */
@@ -671,7 +731,8 @@ const FB = {
         return this.write(true);
       }
       if (r.ok) {
-        this.online = true; this.status = 'saved'; this.lastError = ''; this.warned = false;
+        this.online = true; this.status = this.stream ? 'live' : 'saved'; this.lastError = ''; this.warned = false;
+        if (!this.stream) this.startStream();
       } else {
         let msg = 'HTTP ' + r.status;
         try { const d = await r.json(); if (d && d.error) msg = d.error; } catch (e) { }
@@ -715,6 +776,7 @@ const FB = {
       this.online = true;                       /* empty database, writes will create it */
       if (this.restoreLocal()) this.status = 'local';
     } else this.status = 'saved';
+    if (this.token) this.startStream();
     return had;
   }
 };
@@ -2965,6 +3027,7 @@ Object.assign(ACTIONS, {
       if (email === admin) {
         DB.session = { type: 'admin', email, uid: user.uid };
         await FB.load();
+        FB.startStream();
         UI.mode = 'admin'; UI.screen = 'home'; UI.adminTab = 'home'; UI.params = {}; NAVSTACK.length = 0;
         render(); window.scrollTo(0, 0); toast('Signed in as owner'); return;
       }
