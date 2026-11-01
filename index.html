@@ -624,6 +624,8 @@ const FB = {
   warned: false,
   lastUpdate: '',
   pollTimer: 0,
+  lastActivity: Date.now(),
+  lastHash: '',
   retryAt: 0,
   remoteTimer: 0,
 
@@ -712,6 +714,11 @@ const FB = {
     this.saving = true;
     this.status = 'saving';
     const payload = this.payload();
+    const hash = JSON.stringify([payload.shop, payload.customers, payload.entries, payload.requests, payload.rates, payload.templates, payload.bin]);
+    if (hash === this.lastHash && this.online) {
+      this.saving = false; this.status = this.pollTimer ? 'live' : 'saved';
+      return;                                   /* nothing changed: do not bill a write */
+    }
     try { localStorage.setItem('ml_backup', JSON.stringify(payload)); } catch (e) { }
     try {
       if (window.FBGoogle && !this.token) { try { await window.FBGoogle.current(); } catch (e) { } }
@@ -721,7 +728,8 @@ const FB = {
       if (r.ok) {
         const d = await r.json().catch(() => ({}));
         this.lastUpdate = d.updateTime || '';
-        this.online = true; this.status = 'saved'; this.lastError = ''; this.warned = false;
+        this.online = true; this.status = this.pollTimer ? 'live' : 'saved';
+        this.lastError = ''; this.warned = false; this.lastHash = hash;
       } else if ((r.status === 401 || r.status === 403) && !retried) {
         this.saving = false;
         this.token = null;
@@ -743,24 +751,43 @@ const FB = {
     if (UI.screen === 'settings') render();
   },
 
-  /* Firestore has no REST stream here, so poll the document for changes */
+  /* Firestore has no REST stream here, so poll the document — but only when it pays off */
+  pollDelay() {
+    if (document.visibilityState === 'hidden') return 0;                 /* tab in background: stop */
+    const idle = Date.now() - this.lastActivity;
+    return idle < 60000 ? 5000 : 15000;                                   /* back off when nobody is using it */
+  },
+  schedulePoll(ms) {
+    clearTimeout(this.pollTimer);
+    this.pollTimer = 0;
+    if (!ms) return;
+    this.pollTimer = setTimeout(async () => {
+      await this.tick();
+      this.schedulePoll(this.pollDelay());
+    }, ms);
+  },
+  async tick() {
+    if (document.visibilityState === 'hidden') return;
+    try {
+      const r = await fetch(this.url() + '?mask.fieldPaths=data', { headers: this.headers(), cache: 'no-store' });
+      if (!r.ok) return;
+      const d = await r.json();
+      if (d.updateTime && d.updateTime === this.lastUpdate) return;
+      this.lastUpdate = d.updateTime || '';
+      const fields = (d.fields || {}).data;
+      if (fields) this.applyRemote(this.fromFS(fields));
+    } catch (e) { }
+  },
   startStream() {
     this.stopStream();
-    const tick = async () => {
-      try {
-        const r = await fetch(this.url() + '?mask.fieldPaths=data', { headers: this.headers(), cache: 'no-store' });
-        if (!r.ok) return;
-        const d = await r.json();
-        if (d.updateTime && d.updateTime === this.lastUpdate) return;
-        this.lastUpdate = d.updateTime || '';
-        const fields = (d.fields || {}).data;
-        if (fields) this.applyRemote(this.fromFS(fields));
-      } catch (e) { }
-    };
-    this.pollTimer = setInterval(tick, 4000);
     this.status = 'live';
+    this.schedulePoll(this.pollDelay());
   },
-  stopStream() { if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = 0; } },
+  stopStream() { clearTimeout(this.pollTimer); this.pollTimer = 0; },
+  touch() {
+    this.lastActivity = Date.now();
+    if (!this.pollTimer && this.status === 'live') this.schedulePoll(1200);
+  },
 
   applyRemote(data) {
     if (!this.hydrate(data)) return;
@@ -1221,6 +1248,15 @@ function syncScrollChrome() {
   else if (dy < -8 || y < 72) { nav.classList.remove('hide'); if (ab) ab.classList.remove('hide'); }
   lastY = y;
 }
+/* keep polling cheap: pause when hidden, wake on interaction */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') { FB.touch(); FB.tick(); }
+  else FB.schedulePoll(0);
+});
+['pointerdown', 'keydown', 'input'].forEach(evt => {
+  document.addEventListener(evt, () => FB.touch(), { passive: true });
+});
+
 window.addEventListener('scroll', () => {
   if (!navFrame) navFrame = requestAnimationFrame(syncScrollChrome);
 }, { passive: true });
