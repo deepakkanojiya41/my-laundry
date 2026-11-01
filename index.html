@@ -267,10 +267,10 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 .prog-lab{font-size:10.5px;color:var(--muted);margin-top:4px;font-weight:600;letter-spacing:.01em}
 
 /* ---------- nav ---------- */
-#nav{position:fixed;left:0;right:0;bottom:0;z-index:60;pointer-events:none;transition:transform .26s cubic-bezier(.2,.7,.25,1);will-change:transform}
+#nav{position:fixed;left:0;right:0;bottom:0;z-index:60;pointer-events:none;transition:transform .26s cubic-bezier(.2,.7,.25,1);will-change:transform;background:var(--surface);padding-bottom:var(--safe-b)}
 #nav.hide{transform:translateY(140%)}
 #nav[hidden]{display:none}
-.navinner{pointer-events:auto;background:var(--surface);border-top:1.5px solid var(--line);border-radius:var(--corner) var(--corner) 0 0;box-shadow:0 -6px 24px rgba(10,20,40,.14);padding-bottom:var(--safe-b)}
+.navinner{pointer-events:auto;background:var(--surface);border-top:1.5px solid var(--line);border-radius:var(--corner) var(--corner) 0 0;box-shadow:0 -6px 24px rgba(10,20,40,.14)}
 .navgrid{position:relative;max-width:520px;margin:0 auto;display:grid;grid-template-columns:repeat(var(--n,5),minmax(0,1fr));padding:6px 6px 6px}
 .navpill{position:absolute;top:6px;left:6px;height:calc(100% - 12px);width:calc((100% - 12px) / var(--n,5));background:var(--brand);border-radius:14px;transition:transform .34s cubic-bezier(.22,.8,.24,1);z-index:0;transform:translateX(calc(var(--i,0) * 100%))}
 .navbtn{position:relative;z-index:1;border:0;background:none;height:58px;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10px;font-weight:700;line-height:1.1;color:var(--muted);cursor:pointer;padding:0 1px;letter-spacing:0;-webkit-tap-highlight-color:transparent}
@@ -281,7 +281,7 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 .navbtn:focus-visible{outline:2px solid var(--focus);outline-offset:-3px;border-radius:12px}
 
 /* action bar (customer profile) */
-.actionbar{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--surface);border-top:1.5px solid var(--line);padding:8px 10px calc(8px + var(--safe-b));transition:transform .24s ease;will-change:transform}
+.actionbar{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--surface);border-top:1.5px solid var(--line);padding:8px 10px calc(8px + var(--safe-b));transition:transform .24s ease;will-change:transform;padding-bottom:calc(8px + var(--safe-b))}
 .actionbar.hide{transform:translateY(130%)}
 .actionbar .in{max-width:520px;margin:0 auto;display:flex;gap:7px;overflow-x:auto;scrollbar-width:none}
 .actionbar .in::-webkit-scrollbar{display:none}
