@@ -280,6 +280,12 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 .navbtn.on svg{transform:translateY(-1px) scale(1.04)}
 .navbtn:focus-visible{outline:2px solid var(--focus);outline-offset:-3px;border-radius:12px}
 
+/* floating + that replaces the New entry button once it scrolls away */
+.fab{position:fixed;left:16px;bottom:calc(88px + var(--safe-b));z-index:58;width:54px;height:54px;border-radius:50%;border:0;background:var(--brand);color:var(--on-brand);display:grid;place-items:center;box-shadow:0 8px 22px rgba(10,20,40,.28);cursor:pointer;opacity:0;transform:scale(.6);pointer-events:none;transition:opacity .2s ease,transform .24s cubic-bezier(.2,.9,.3,1.2)}
+.fab.show{opacity:1;transform:scale(1);pointer-events:auto}
+.fab svg{width:24px;height:24px}
+.fab:focus-visible{outline:2.5px solid var(--focus);outline-offset:3px}
+
 /* action bar (customer profile) */
 .actionbar{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--surface);border-top:1.5px solid var(--line);padding:8px 10px calc(8px + var(--safe-b));transition:transform .24s ease;will-change:transform;padding-bottom:calc(8px + var(--safe-b))}
 .actionbar.hide{transform:translateY(130%)}
@@ -1281,7 +1287,8 @@ function renderActionBar() {
     const c = custById(UI.params.id);
     if (!c) { ab.innerHTML = ''; return; }
     const t = custTotals(c.id);
-    ab.innerHTML = `<div class="actionbar"><div class="in">
+    ab.innerHTML = `<button class="fab" id="fabNew" data-act="newEntry" data-cid="${c.id}" aria-label="New entry">${ic('plus')}</button>
+      <div class="actionbar"><div class="in">
       ${c.phone ? `<button class="btn" data-act="call" data-phone="${esc(c.phone)}">${ic('phone')} Call</button>` : ''}
       ${c.phone ? `<button class="btn" data-act="chat" data-cid="${c.id}">${ic('chat')} Chat</button>` : ''}
       ${c.address ? `<button class="btn" data-act="directions" data-cid="${c.id}">${ic('pin')} Directions</button>` : ''}
@@ -1320,6 +1327,9 @@ function syncScrollChrome() {
   navFrame = 0;
   const nav = $('#nav'), ab = $('.actionbar');
   const y = window.scrollY || 0;
+  /* the profile's New entry button shrinks into a + once it leaves the screen */
+  const fab = document.getElementById('fabNew'), inline = document.getElementById('newEntryInline');
+  if (fab && inline) fab.classList.toggle('show', inline.getBoundingClientRect().bottom < 8);
   if (sheets.length || nav.hidden) { lastY = y; return; }
   const dy = y - lastY;
   if (y > 96 && dy > 8) { nav.classList.add('hide'); if (ab) ab.classList.add('hide'); }
@@ -1669,7 +1679,7 @@ SCREENS.customer = function () {
     rrow('Paid', money(t.paid), 'ok'),
     rrow('Balance due (udhari)', money(t.balance), t.balance > 0 ? 'due' : 'ok')
   ]);
-  const newBtn = `<button class="btn primary" data-act="newEntry" data-cid="${c.id}" style="margin:2px 0 14px">${ic('plus')} New entry</button>`;
+  const newBtn = `<button class="btn primary" id="newEntryInline" data-act="newEntry" data-cid="${c.id}" style="margin:2px 0 14px">${ic('plus')} New entry</button>`;
   const note = c.note ? `<div class="notice">${ic('edit', 15)}<div>${esc(c.note)}</div></div>` : '';
   const shown = UI.showAllEntries ? entries : entries.slice(0, 40);
   const moreBtn = entries.length > shown.length
