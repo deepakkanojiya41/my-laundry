@@ -1282,7 +1282,6 @@ function renderActionBar() {
     if (!c) { ab.innerHTML = ''; return; }
     const t = custTotals(c.id);
     ab.innerHTML = `<div class="actionbar"><div class="in">
-      <button class="btn primary" data-act="newEntry" data-cid="${c.id}">${ic('plus')} New entry</button>
       ${c.phone ? `<button class="btn" data-act="call" data-phone="${esc(c.phone)}">${ic('phone')} Call</button>` : ''}
       ${c.phone ? `<button class="btn" data-act="chat" data-cid="${c.id}">${ic('chat')} Chat</button>` : ''}
       ${c.address ? `<button class="btn" data-act="directions" data-cid="${c.id}">${ic('pin')} Directions</button>` : ''}
@@ -1670,6 +1669,7 @@ SCREENS.customer = function () {
     rrow('Paid', money(t.paid), 'ok'),
     rrow('Balance due (udhari)', money(t.balance), t.balance > 0 ? 'due' : 'ok')
   ]);
+  const newBtn = `<button class="btn primary" data-act="newEntry" data-cid="${c.id}" style="margin:2px 0 14px">${ic('plus')} New entry</button>`;
   const note = c.note ? `<div class="notice">${ic('edit', 15)}<div>${esc(c.note)}</div></div>` : '';
   const shown = UI.showAllEntries ? entries : entries.slice(0, 40);
   const moreBtn = entries.length > shown.length
@@ -1679,7 +1679,7 @@ SCREENS.customer = function () {
     ? `<div class="sec-title"><div class="h2">Entry history</div><div class="tiny">${shown.length} of ${entries.length}</div></div>` +
       shown.map(e => entryCard(e, { showDate: true })).join('') + moreBtn
     : emptyState('No entries yet', 'Create the first entry for this customer.', `<button class="btn primary" data-act="newEntry" data-cid="${c.id}">New entry</button>`);
-  return { html: head + prof + stats + note + hist };
+  return { html: head + prof + stats + newBtn + note + hist };
 };
 
 /* ---------- ORDERS ---------- */
