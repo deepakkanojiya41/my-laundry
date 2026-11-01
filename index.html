@@ -2571,6 +2571,18 @@ SCREENS.signin = function () {
   };
 };
 
+/* ---------- splash (shown while auth resolves) ---------- */
+SCREENS.splash = function () {
+  return {
+    html: `<div style="min-height:80dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center">
+      ${machineSVG(96)}
+      <div class="h1" style="font-size:22px">${esc(DB.shop.name)}</div>
+      <div class="sub">${esc(DB.shop.tagline)}</div>
+      <div class="tiny" style="margin-top:8px">Signing in…</div>
+    </div>`
+  };
+};
+
 /* ---------- customer app helpers ---------- */
 function currentCustomer() {
   const id = UI.params.cid || (DB.session && DB.session.customerId) || (liveCustomers()[0] || {}).id;
@@ -2932,7 +2944,7 @@ Object.assign(ACTIONS, {
   rmQr: () => { DB.shop.qrImage = null; persist('shop'); requestClose(); setTimeout(() => { openMyQr(); toast('QR image removed'); }, 100); },
   signOutPrompt: () => signOut(),
   signOutCust: () => {
-    confirmSheet({ title: 'Sign out?', msg: 'You will go back to the sign-in screen.', label: 'Sign out', danger: true, onOk: () => { DB.session = null; UI.mode = 'admin'; UI.screen = 'signin'; UI.params = {}; NAVSTACK.length = 0; if (window.FBGoogle) window.FBGoogle.signOut(); render(); } });
+    confirmSheet({ title: 'Sign out?', msg: 'You will go back to the sign-in screen.', label: 'Sign out', danger: true, onOk: () => { DB.session = null; saveSession(null); UI.mode = 'admin'; UI.screen = 'signin'; UI.params = {}; NAVSTACK.length = 0; if (window.FBGoogle) window.FBGoogle.signOut(); render(); } });
   },
   switchToCustomer: () => openPreviewCustomer(),
   exitPreview: () => exitPreview(),
@@ -3027,6 +3039,7 @@ Object.assign(ACTIONS, {
     const el = $('#si-otp'); const v = (el ? el.value : '').replace(/\D/g, '');
     if (v.length !== 6) { SI.err = 'Enter the 6 digit code (any 6 digits work).'; render(); return; }
     SI.err = ''; DB.session = { type: 'admin', email: DB.shop.ownerEmail };
+    saveSession(DB.session);
     UI.mode = 'admin'; UI.screen = 'home'; UI.adminTab = 'home'; UI.params = {}; NAVSTACK.length = 0;
     render(); window.scrollTo(0, 0); toast('Welcome back');
   },
@@ -3044,6 +3057,7 @@ Object.assign(ACTIONS, {
       const admin = (DB.shop.ownerEmail || ADMIN_EMAIL_FALLBACK).toLowerCase();
       if (email === admin) {
         DB.session = { type: 'admin', email, uid: user.uid };
+        saveSession(DB.session);
         await FB.load();
         FB.startStream();
         UI.mode = 'admin'; UI.screen = 'home'; UI.adminTab = 'home'; UI.params = {}; NAVSTACK.length = 0;
@@ -3052,6 +3066,7 @@ Object.assign(ACTIONS, {
       const c = liveCustomers().find(x => x.email && x.email.toLowerCase() === email);
       if (c) {
         DB.session = { type: 'customer', email, uid: user.uid, customerId: c.id };
+        saveSession(DB.session);
         UI.mode = 'cust'; UI.preview = false; UI.custTab = 'entries'; UI.screen = 'entries'; UI.params = { cid: c.id }; NAVSTACK.length = 0;
         render(); window.scrollTo(0, 0); toast('Welcome, ' + c.name.split(' ')[0]); return;
       }
@@ -3212,12 +3227,12 @@ window.addEventListener('fb-google-ready', () => {
   if (!window.FBGoogle) return;
   window.FBGoogle.onChange(async user => {
     if (!user) {
-      if (DB.session && DB.session.uid) { DB.session = null; UI.mode = 'admin'; UI.screen = 'signin'; NAVSTACK.length = 0; render(); }
+      if (DB.session && DB.session.uid) { DB.session = null; saveSession(null); UI.mode = 'admin'; UI.screen = 'signin'; NAVSTACK.length = 0; render(); }
       return;
     }
     if (DB.session && DB.session.uid === user.uid) return;
     const s = sessionFor(user.email, user.uid);
-    if (s) { DB.session = s; enterSession(); }
+    if (s) { DB.session = s; saveSession(s); enterSession(); }
   });
 });
 
@@ -3273,9 +3288,20 @@ function enterSession() {
   else { UI.mode = 'cust'; UI.preview = false; UI.screen = 'entries'; UI.custTab = 'entries'; UI.params = { cid: s.customerId }; }
   render(); window.scrollTo(0, 0);
 }
+function cachedSession() {
+  try {
+    const raw = localStorage.getItem('ml_session');
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function saveSession(s) {
+  try { s ? localStorage.setItem('ml_session', JSON.stringify(s)) : localStorage.removeItem('ml_session'); } catch (e) { }
+}
 async function boot() {
-  render();
-  await waitForGoogle(2500);
+  const cached = cachedSession();
+  if (cached) { DB.session = cached; enterSession(); }
+  else { UI.screen = 'splash'; render(); }
+  await waitForGoogle(1500);
   let user = null;
   if (window.FBGoogle) { try { user = await window.FBGoogle.current(); } catch (e) { } }
   const hadRemote = await FB.init();
@@ -3284,9 +3310,16 @@ async function boot() {
     if (s) DB.session = s;
   }
   if (hadRemote) { closeAllSheets(); }
+  if (window.FBGoogle && !user && DB.session && DB.session.uid) {
+    /* the cached session is stale: firebase says nobody is signed in */
+    DB.session = null; saveSession(null);
+  }
   if (handleHash()) { /* deep link wins */ }
-  else if (DB.session) { enterSession(); toast('Welcome back'); }
-  else { UI.screen = 'signin'; UI.mode = 'admin'; render(); }
+  else if (DB.session) {
+    saveSession(DB.session);
+    if (UI.screen !== 'home' && UI.screen !== 'entries') enterSession();
+    else render();
+  } else { UI.screen = 'signin'; UI.mode = 'admin'; render(); }
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
       reg.update().catch(() => { });
