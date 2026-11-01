@@ -78,6 +78,9 @@ a{color:var(--focus)}
 .screen-anim > *:nth-child(6){animation-delay:170ms}
 .screen-anim > *:nth-child(n+7){animation-delay:190ms}
 @keyframes blk{from{opacity:0;transform:translateX(var(--from,36px))}to{opacity:1;transform:none}}
+/* profile entrance: avatar pops, then the rest of the blocks settle */
+.screen-anim .avatar.lg{animation:pop .5s cubic-bezier(.2,.9,.3,1.2) both}
+@keyframes pop{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
 #view.out-left{animation:outL .13s ease-in both}
 #view.out-right{animation:outR .13s ease-in both}
 @keyframes outL{to{opacity:0;transform:translateX(-28px)}}
@@ -1186,6 +1189,7 @@ function go(screen, params) {
   if (UI.screen === screen && !params) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
   NAVSTACK.push({ screen: UI.screen, params: UI.params, mode: UI.mode });
   UI.screen = screen; UI.params = params || {};
+  UI.dir = 1; pendingAnim = true;          /* every screen change animates in */
   render(); window.scrollTo(0, 0); pushHist();
 }
 function popLayer() {
@@ -1259,7 +1263,12 @@ function render() {
   else view.classList.add('tabbar');
   if (UI.screen === 'customer' && UI.mode === 'admin') view.classList.add('hasbar');
   $('#nav').classList.remove('hide');
-  if (pendingAnim) { view.classList.add('screen-anim'); view.style.setProperty('--from', (UI.dir > 0 ? 36 : -36) + 'px'); pendingAnim = false; }
+  if (pendingAnim) {
+    view.classList.add('screen-anim');
+    view.style.setProperty('--from', (UI.dir > 0 ? 36 : -36) + 'px');
+    pendingAnim = false;
+    setTimeout(() => view.classList.remove('screen-anim'), 480);   /* in-screen re-renders must not replay it */
+  }
   renderNav();
   renderActionBar();
   bindRendered();
