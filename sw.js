@@ -1,5 +1,5 @@
 /* My Laundry — app shell service worker */
-const CACHE = 'my-laundry-v1';
+const CACHE = 'my-laundry-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
