@@ -108,7 +108,7 @@ a{color:var(--focus)}
 .hero{
   background:var(--brand);color:var(--on-brand);
   margin:0 -16px 16px;padding:calc(18px + env(safe-area-inset-top,0px)) 20px 22px;
-  border-radius:0;position:relative;overflow:hidden;
+  border-radius:0;position:sticky;top:0;z-index:30;overflow:hidden;
 }
 .hero-top{display:flex;align-items:flex-start;gap:10px}
 .hero-greet{font-size:13px;opacity:.78;font-weight:500}
