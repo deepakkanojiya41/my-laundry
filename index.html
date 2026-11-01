@@ -3301,18 +3301,29 @@ async function boot() {
   const cached = cachedSession();
   if (cached) { DB.session = cached; enterSession(); }
   else { UI.screen = 'splash'; render(); }
-  await waitForGoogle(1500);
+  await waitForGoogle(3000);
   let user = null;
-  if (window.FBGoogle) { try { user = await window.FBGoogle.current(); } catch (e) { } }
+  let authKnown = false;
+  if (window.FBGoogle) {
+    try {
+      const r = window.FBGoogle.firstAuth ? await window.FBGoogle.firstAuth(6000) : await window.FBGoogle.current();
+      if (r === 'timeout') { authKnown = false; }
+      else { user = r; authKnown = true; }
+    } catch (e) { }
+  }
   const hadRemote = await FB.init();
   if (user) {
     const s = sessionFor(user.email, user.uid);
     if (s) DB.session = s;
   }
   if (hadRemote) { closeAllSheets(); }
-  if (window.FBGoogle && !user && DB.session && DB.session.uid) {
-    /* the cached session is stale: firebase says nobody is signed in */
+  /* only drop a cached session when firebase has actually told us nobody is signed in */
+  if (authKnown && !user && DB.session && DB.session.uid) {
     DB.session = null; saveSession(null);
+  }
+  if (user && !DB.session) {
+    const s2 = sessionFor(user.email, user.uid);
+    if (s2) { DB.session = s2; saveSession(s2); }
   }
   if (handleHash()) { /* deep link wins */ }
   else if (DB.session) {
@@ -3359,6 +3370,19 @@ window.FBGoogle = {
     if (!u) return null;
     try { window.FB.token = await u.getIdToken(); } catch (e) { }
     return { email: u.email || '', name: u.displayName || '', uid: u.uid };
+  },
+  firstAuth(timeout) {
+    return new Promise(resolve => {
+      let done = false;
+      const finish = v => { if (!done) { done = true; resolve(v); } };
+      const un = onAuthStateChanged(auth, async u => {
+        un();
+        if (!u) return finish(null);
+        try { window.FB.token = await u.getIdToken(); } catch (e) { }
+        finish({ email: u.email || '', name: u.displayName || '', uid: u.uid });
+      });
+      setTimeout(() => finish('timeout'), timeout || 6000);
+    });
   },
   onChange(cb) {
     onAuthStateChanged(auth, async u => {
