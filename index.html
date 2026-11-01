@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, minimum-scale=1, user-scalable=no">
 <title>My Laundry</title>
 <meta name="description" content="Pickup and delivery laundry management for ironing and dry clean shops.">
 <meta name="theme-color" content="#122C63" media="(prefers-color-scheme: light)">
@@ -47,6 +47,7 @@
 html{-webkit-text-size-adjust:100%}
 /* text copying is blocked across the app; form fields stay usable */
 html,body{-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;-webkit-touch-callout:none}
+html,body{touch-action:pan-x pan-y;-ms-content-zooming:none;-ms-touch-action:pan-x pan-y}
 input,textarea,select,[contenteditable="true"]{-webkit-user-select:text;-moz-user-select:text;user-select:text}
 img,svg{-webkit-user-drag:none;user-select:none}
 body{
@@ -1095,6 +1096,20 @@ document.addEventListener('click', e => {
   }
   if (e.target.closest('[data-snack]')) { const f = snackFn; hideSnack(); if (f) f(); }
 });
+/* ---------- zoom: pinch, double tap and ctrl+wheel are blocked ---------- */
+['gesturestart', 'gesturechange', 'gestureend'].forEach(evt => {
+  document.addEventListener(evt, e => e.preventDefault(), { passive: false });
+});
+document.addEventListener('wheel', e => {
+  if (e.ctrlKey || e.metaKey) e.preventDefault();          /* trackpad / ctrl+scroll zoom */
+}, { passive: false });
+document.addEventListener('touchmove', e => {
+  if (e.touches && e.touches.length > 1) e.preventDefault(); /* two-finger pinch */
+}, { passive: false });
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && ['+', '-', '=', '0'].includes(e.key)) e.preventDefault();
+});
+
 /* ---------- copying: app text cannot be selected or copied ---------- */
 const inField = t => !!(t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]'));
 document.addEventListener('copy', e => {
