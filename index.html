@@ -814,10 +814,10 @@ const FB = {
       if (touched) await this.bumpVersion();
       this.online = true; this.status = this.pollTimer ? 'live' : 'saved';
       this.lastError = ''; this.warned = false;
-      try { localStorage.setItem('ml_backup', JSON.stringify(DB)); } catch (e) { }
+      this.backupLocal();
     } catch (e) {
       this.online = false; this.status = 'error'; this.lastError = e.message || 'network';
-      try { localStorage.setItem('ml_backup', JSON.stringify(DB)); } catch (er) { }
+      this.backupLocal();
       if (!this.warned) { this.warned = true; toast('Cloud save failed: ' + this.lastError, 4200); }
     }
     this.saving = false;
@@ -855,6 +855,17 @@ const FB = {
     this.remoteTimer = setTimeout(() => {
       if (!sheets.length && !inField(document.activeElement) && UI.screen !== 'signin') render();
     }, 250);
+  },
+
+  backupLocal() {
+    try {
+      const body = JSON.stringify(DB);
+      if (body.length > 1500000) {                 /* keep well inside the 5 MB quota */
+        if (!this.backupWarned) { this.backupWarned = true; toast('Local backup skipped: data too large', 3000); }
+        return;
+      }
+      localStorage.setItem('ml_backup', body);
+    } catch (e) { }
   },
 
   restoreLocal() {
@@ -1645,8 +1656,13 @@ SCREENS.customer = function () {
     rrow('Balance due (udhari)', money(t.balance), t.balance > 0 ? 'due' : 'ok')
   ]);
   const note = c.note ? `<div class="notice">${ic('edit', 15)}<div>${esc(c.note)}</div></div>` : '';
+  const shown = UI.showAllEntries ? entries : entries.slice(0, 40);
+  const moreBtn = entries.length > shown.length
+    ? `<button class="btn ghost" data-act="showAllEntries" style="margin-top:4px">Show all ${entries.length} entries</button>`
+    : '';
   const hist = entries.length
-    ? `<div class="sec-title"><div class="h2">Entry history</div><div class="tiny">${entries.length}</div></div>` + entries.map(e => entryCard(e, { showDate: true })).join('')
+    ? `<div class="sec-title"><div class="h2">Entry history</div><div class="tiny">${shown.length} of ${entries.length}</div></div>` +
+      shown.map(e => entryCard(e, { showDate: true })).join('') + moreBtn
     : emptyState('No entries yet', 'Create the first entry for this customer.', `<button class="btn primary" data-act="newEntry" data-cid="${c.id}">New entry</button>`);
   return { html: head + prof + stats + note + hist };
 };
@@ -2851,7 +2867,8 @@ Object.assign(ACTIONS, {
   goRecycle: () => go('recycle'),
   openBills: () => { UI.billsMonth = monthKey(todayISO()); go('bills'); },
   openBill: t => go('bill', { cid: t.dataset.cid, month: t.dataset.month || UI.billsMonth || monthKey(todayISO()) }),
-  openCustomer: t => go('customer', { id: t.dataset.id }),
+  openCustomer: t => { UI.showAllEntries = false; go('customer', { id: t.dataset.id }); },
+  showAllEntries: () => { UI.showAllEntries = true; render(); },
 
   /* customers */
   addCustomer: () => openCustomerForm(null, () => { }),
