@@ -280,14 +280,17 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 
 /* ---------- sheets ---------- */
 .sheet-wrap{position:fixed;inset:0;z-index:100;display:flex;align-items:flex-end;justify-content:center}
-.sheet-bd{position:absolute;inset:0;background:rgba(6,12,24,.52);opacity:0;transition:opacity .24s ease}
+.sheet-bd{position:absolute;inset:0;background:rgba(6,12,24,.52);opacity:0;transition:opacity .24s ease;will-change:opacity}
 .sheet-wrap.in .sheet-bd{opacity:1}
-.sheet{position:relative;width:100%;max-width:520px;max-height:92dvh;background:var(--surface);border-radius:22px 22px 0 0;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .3s cubic-bezier(.22,.85,.24,1);box-shadow:0 -10px 40px rgba(0,0,0,.3);will-change:transform}
-.sheet-wrap.in .sheet{transform:translateY(0)}
+.sheet{position:relative;width:100%;max-width:520px;max-height:92dvh;background:var(--surface);border-radius:22px 22px 0 0;display:flex;flex-direction:column;transform:translate3d(0,100%,0);transition:transform .3s cubic-bezier(.22,.85,.24,1);box-shadow:0 -10px 40px rgba(0,0,0,.3);will-change:transform;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.sheet-wrap.in .sheet{transform:translate3d(0,0,0)}
 .sheet-wrap.stacked .sheet{box-shadow:0 -10px 40px rgba(0,0,0,.3), 0 0 0 1px var(--line)}
 .grab{padding:9px 0 3px;display:flex;justify-content:center;cursor:grab;touch-action:none;flex:0 0 auto}
 .sheet-wrap.dragging,.sheet-wrap.dragging *{user-select:none;-webkit-user-select:none}
 .sheet-wrap.dragging .grab{cursor:grabbing}
+/* a cheap shadow while the finger is down: the big blur is the main source of frame drops */
+.sheet-wrap.dragging .sheet{box-shadow:0 -2px 10px rgba(0,0,0,.18);transition:none}
+.sheet-wrap.dragging .sheet-bd{transition:none}
 .grab i{width:40px;height:4.5px;border-radius:3px;background:var(--line-strong);opacity:.6;display:block}
 .sheet-head{padding:2px 18px 10px;display:flex;align-items:flex-start;gap:10px;flex:0 0 auto;touch-action:none}
 .sheet-head h3{font-size:18px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
@@ -746,7 +749,9 @@ function openSheet(opts) {
   if (sheets.length) wrap.classList.add('stacked');
   sheets.push({ wrap, sheet, onClose: opts.onClose });
   lockBody(true);
+  wrap.dataset.opening = '1';
   requestAnimationFrame(() => wrap.classList.add('in'));
+  setTimeout(() => { delete wrap.dataset.opening; }, 340);
   if (opts.onMount) { try { opts.onMount(wrap); } catch (e) { console.error('sheet mount', e); } }
   bindSheetGestures(wrap, sheet);
   pushHist();
@@ -775,13 +780,25 @@ function closeAllSheets() { while (sheets.length) { const t = sheets.pop(); t.wr
 function bindSheetGestures(wrap, sheet) {
   const bd = $('.sheet-bd', wrap);
   const body = $('.sheet-body', wrap);
-  const CLOSE_MS = 240;
-  let startY = 0, dy = 0, dragging = false, armed = false, startScroll = 0;
-  let lastY = 0, lastT = 0, velocity = 0, settleT = 0;
+  const head = $('.sheet-head', wrap);
+  const grab = $('.grab', wrap);
+  const CLOSE_MS = 260;
+  let startY = 0, dy = 0, dragging = false, velocity = 0;
+  let lastY = 0, lastT = 0, settleT = 0, frame = 0, travelled = 0;
+
+  /* one style write per frame, transform + opacity only (both composite cheaply) */
+  const paint = () => {
+    frame = 0;
+    sheet.style.transform = 'translate3d(0,' + dy + 'px,0)';
+    bd.style.opacity = String(Math.max(0, 1 - dy / 340));
+  };
+  const queue = () => { if (!frame) frame = requestAnimationFrame(paint); };
+  const flush = () => { if (frame) { cancelAnimationFrame(frame); frame = 0; } paint(); };
 
   const begin = y => {
+    if (wrap.dataset.opening) return;      /* let the open animation finish, no snap */
     clearTimeout(settleT);
-    dragging = true; startY = y; dy = 0; velocity = 0;
+    dragging = true; startY = y; dy = 0; velocity = 0; travelled = 0;
     lastY = y; lastT = Date.now();
     sheet.style.transition = 'none';
     wrap.classList.add('dragging');
@@ -789,99 +806,97 @@ function bindSheetGestures(wrap, sheet) {
   const follow = y => {
     if (!dragging) return;
     dy = Math.max(0, y - startY);
+    travelled = Math.max(travelled, dy);
     const now = Date.now(), dt = now - lastT;
     if (dt > 6) { velocity = (y - lastY) / dt; lastY = y; lastT = now; }
-    sheet.style.transform = `translateY(${dy}px)`;
-    bd.style.opacity = String(clamp(1 - dy / 340, 0, 1));
+    queue();
+  };
+  const swallowNextClick = () => {
+    const stop = e => { e.stopPropagation(); e.preventDefault(); };
+    wrap.addEventListener('click', stop, true);
+    setTimeout(() => wrap.removeEventListener('click', stop, true), 350);
   };
   const settle = () => {
-    armed = false;
     if (!dragging) return;
     dragging = false;
     wrap.classList.remove('dragging');
+    flush();
+    if (travelled > 10) swallowNextClick();
     const closeAt = Math.min(140, sheet.offsetHeight * 0.26);
-    const shouldClose = dy > closeAt || (velocity > 0.45 && dy > 20);
-    if (shouldClose) {
-      sheet.style.transition = `transform ${CLOSE_MS}ms cubic-bezier(.35,0,.75,.5)`;
-      sheet.style.transform = 'translateY(100%)';
+    if (dy > closeAt || (velocity > 0.45 && dy > 20)) {
+      sheet.style.transition = 'transform ' + CLOSE_MS + 'ms cubic-bezier(.3,0,.7,.4)';
+      sheet.style.transform = 'translate3d(0,100%,0)';
       bd.style.opacity = '0';
       requestClose();
     } else if (dy > 0) {
-      sheet.style.transition = 'transform .3s cubic-bezier(.22,.9,.28,1.02)';
+      sheet.style.transition = 'transform .32s cubic-bezier(.22,.9,.28,1.02)';
       sheet.style.transform = '';
       bd.style.opacity = '';
-      settleT = setTimeout(() => { sheet.style.transition = ''; }, 320);
+      settleT = setTimeout(() => { sheet.style.transition = ''; }, 340);
     } else {
       sheet.style.transition = '';
       sheet.style.transform = '';
       bd.style.opacity = '';
     }
   };
+  const cancel = () => { dy = 0; velocity = 0; settle(); };
   const isControl = t => !!(t && t.closest && t.closest('button, input, select, textarea, a, label, .varchip, .qty, .chips'));
 
-  /* which part of the sheet the finger landed on */
-  const zoneOf = t => {
-    if (!t || !t.closest) return 'none';
-    if (t.closest('.grab, .sheet-head')) return 'handle';
-    if (t.closest('.sheet-body')) return 'body';
-    return 'none';
-  };
-
-  const onStart = (y, target) => {
-    if (isControl(target)) return false;
-    const zone = zoneOf(target);
-    if (zone === 'handle') { begin(y); return true; }
-    if (zone === 'body') {
-      /* a body drag only counts when the content is already scrolled to the top */
-      armed = true; startY = y; startScroll = body ? body.scrollTop : 0;
-      lastY = y; lastT = Date.now(); velocity = 0;
-      return true;
-    }
-    return false;
-  };
-  const onMove = (y, ev) => {
-    if (dragging) { follow(y); if (ev.cancelable) ev.preventDefault(); return; }
-    if (!armed) return;
-    if (startScroll > 0) { armed = false; return; }        /* let the body scroll */
-    if (y - startY < 6) return;
-    begin(startY);                                          /* promote to a drag */
-    follow(y);
-    if (ev.cancelable) ev.preventDefault();
-  };
-  const onCancel = () => { dy = 0; velocity = 0; settle(); };
-
-  const onTouchStart = e => {
-    if (e.touches.length > 1) return;
-    onStart(e.touches[0].clientY, e.target);
-  };
-  const onTouchMove = e => {
-    if (!dragging && !armed) return;
-    onMove(e.touches[0].clientY, e);
-  };
-  const onTouchEnd = () => settle();
-
-  sheet.addEventListener('touchstart', onTouchStart, { passive: true });
-  sheet.addEventListener('touchmove', onTouchMove, { passive: false });
-  sheet.addEventListener('touchend', onTouchEnd);
-  sheet.addEventListener('touchcancel', onCancel);
-
-  sheet.addEventListener('mousedown', e => {
-    if (e.button !== 0) return;
-    if (!onStart(e.clientY, e.target)) return;
-    const mv = ev => onMove(ev.clientY, ev);
-    const up = () => {
-      window.removeEventListener('mousemove', mv);
-      window.removeEventListener('mouseup', up);
-      settle();
-    };
-    window.addEventListener('mousemove', mv);
-    window.addEventListener('mouseup', up);
-    if (dragging) e.preventDefault();
+  /* --- drag from the handle or the title row: touch-action is none there, so this is 1:1 --- */
+  [grab, head].forEach(el => {
+    el.addEventListener('touchstart', e => {
+      if (e.touches.length > 1 || isControl(e.target)) return;
+      begin(e.touches[0].clientY);
+    }, { passive: true });
+    el.addEventListener('touchmove', e => {
+      if (!dragging) return;
+      follow(e.touches[0].clientY);
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+    el.addEventListener('touchend', settle);
+    el.addEventListener('touchcancel', cancel);
+    el.addEventListener('mousedown', e => {
+      if (e.button !== 0 || isControl(e.target)) return;
+      begin(e.clientY); e.preventDefault();
+      const mv = ev => follow(ev.clientY);
+      const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); settle(); };
+      window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+    });
   });
+
+  /* --- drag from the content, but only when it is already scrolled to the top.
+         The non-passive listener is added for that gesture only, so normal
+         scrolling inside the sheet keeps the browser's own fast path. --- */
+  if (body) {
+    body.addEventListener('touchstart', e => {
+      if (e.touches.length > 1 || isControl(e.target) || body.scrollTop > 0) return;
+      const armY = e.touches[0].clientY;
+      const mv = ev => {
+        const y = ev.touches[0].clientY;
+        if (!dragging) {
+          if (y - armY < 6) return;
+          begin(armY);
+        }
+        follow(y);
+        if (ev.cancelable) ev.preventDefault();
+      };
+      const up = () => {
+        body.removeEventListener('touchmove', mv);
+        body.removeEventListener('touchend', up);
+        body.removeEventListener('touchcancel', up);
+        settle();
+      };
+      body.addEventListener('touchmove', mv, { passive: false });
+      body.addEventListener('touchend', up);
+      body.addEventListener('touchcancel', up);
+    }, { passive: true });
+  }
 
   bd.addEventListener('click', () => requestClose());
   $('[data-x]', wrap).addEventListener('click', () => requestClose());
 }
+
+
 
 
 /* confirm sheet */
