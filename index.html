@@ -1670,7 +1670,7 @@ SCREENS.home = function () {
   const list = (title, arr, link) => arr.length ? `<div class="sec-title"><div class="h2">${esc(title)}</div>${link || ''}</div>${arr.slice(0, 6).map(e => entryCard(e, { showDate: true })).join('')}` : '';
 
   const oweList = owing.length ? `<div class="sec-title"><div class="h2">Who owes you</div><button class="linkbtn" data-act="goUdhari">See all</button></div>
-    <div class="card flat" style="padding:0 14px">${owing.slice(0, 4).map(x => `<button class="listrow" data-act="openCustomer" data-id="${x.c.id}">
+    <div class="listplain">${owing.slice(0, 4).map(x => `<button class="listrow" data-act="openCustomer" data-id="${x.c.id}">
       ${avatarHTML(x.c.name)}
       <div class="grow"><div class="nm">${esc(x.c.name)}</div><div class="mt">${x.t.entries} entr${x.t.entries === 1 ? 'y' : 'ies'} · ${esc(x.c.phone || 'no mobile')}</div></div>
       <div class="rt"><div class="bal">${money(x.t.balance)}</div></div>
