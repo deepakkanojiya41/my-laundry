@@ -2817,7 +2817,7 @@ SCREENS.pickup = function () {
       <div class="field"><label class="label">Clothes estimate</label><input class="input" id="pu-count" inputmode="numeric" placeholder="e.g. 6"></div>
       <div class="field"><label class="label">Address</label><textarea class="input" id="pu-addr">${esc(c.address || '')}</textarea></div>
       <div class="field"><label class="label">Note</label><input class="input" id="pu-note" placeholder="Optional"></div>
-      <button class="btn primary" data-act="pickSend">Send request on WhatsApp</button>
+      <button class="btn primary" data-act="pickSend">Send pickup request</button>
     </div>
     ${SENT.length ? `<div class="sec-title"><div class="h2">Sent from this phone</div></div><div class="card flat" style="padding:0 14px">${SENT.map(s => `<div style="padding:12px 0;border-bottom:1px solid var(--line)">
       <div class="h3">${esc(fmtD(s.date))} · ${esc(s.slot.split(' ')[0])}</div><div class="tiny">${s.count} pcs · ${esc(s.service)}</div></div>`).join('')}</div>` : ''}`
@@ -3273,16 +3273,20 @@ Object.assign(ACTIONS, {
     const note = ($('#pu-note') || {}).value || '';
     if (!count) return toast('How many clothes?');
     if (!addr.trim()) return toast('Please add an address');
-    if (!DB.shop.phone) return toast('The shop has not added a phone number yet');
-    const payload = { v: 1, name: (c || {}).name || '', mobile: (c || {}).phone || '', date, slot, count, service: svc, address: addr, note };
-    const link = appBase() + '/#r=' + LZString.compressToEncodedURIComponent(JSON.stringify(payload));
-    const msg = `Pickup request\nName: ${payload.name}\nDate: ${fmtD(date)}\nSlot: ${slot}\nClothes: ${count} pcs\nService: ${svc}\nAddress: ${addr}${note ? '\nNote: ' + note : ''}\n\nShop: open this to import → ${link}`;
-    openWa(DB.shop.phone, msg);
+    const req = {
+      id: uid(), name: (c || {}).name || '', mobile: (c || {}).phone || '',
+      customerId: (c || {}).id || '', customerEmail: ((c || {}).email || '').toLowerCase(),
+      date, slot, count, service: svc, address: addr, note,
+      status: 'requested', created: todayISO()
+    };
+    DB.requests.push(req);
+    persist('request', req.id);                 /* goes straight to the shop's Orders */
     SENT.unshift({ date, slot, count, service: svc });
-    toast('Request sent on WhatsApp');
+    toast('Pickup request sent to the shop');
     render();
   }
 });
+
 
 /* edit entry sheet (dates, notes, items, status) */
 function openEditEntry(id) {
