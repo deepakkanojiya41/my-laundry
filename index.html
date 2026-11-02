@@ -2357,13 +2357,16 @@ function openUpi(cid) {
         ${due > 0 ? `<button class="btn sm ghost" data-act="upiFull" data-v="${due}">Full due</button>` : ''}</div></div>
       <div id="upiQR" class="qrbox">${qrSVG(upiLink(due || 0, 'Laundry payment'), 220)}</div>
       <div class="tiny center" style="margin-bottom:12px">${esc(DB.shop.upi)}</div>
+      ${UI.mode === 'cust' ? `
       <div class="btnrow" style="margin-bottom:8px">
         <button class="btn sm primary" data-act="upiOpen">Open UPI app</button>
         <button class="btn sm ghost" data-act="upiCopy">Copy UPI link</button>
       </div>
       <div class="chips" style="margin-top:10px">
         ${[['gpay', 'Google Pay'], ['phonepe', 'PhonePe'], ['paytm', 'Paytm']].map(([k, l]) => `<button class="chip" data-act="upiApp" data-app="${k}">${l}</button>`).join('')}
-      </div>`,
+      </div>` : `
+      <button class="btn sm ghost" data-act="upiCopy">Copy UPI link</button>
+      <div class="tiny center" style="margin-top:10px">Customer scans this with any UPI app.</div>`}`,
     onMount: w => {
       const amtEl = $('#upiAmt', w);
       const redraw = () => {
