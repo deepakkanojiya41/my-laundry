@@ -827,6 +827,15 @@ const FB = {
       this.lastError = ''; this.warned = false;
       this.backupLocal();
     } catch (e) {
+      if (e && e.message === 'auth' && !this.retriedAuth) {
+        this.retriedAuth = true;
+        this.saving = false;
+        if (window.FBGoogle) { try { await window.FBGoogle.current(true); } catch (er) { } }
+        this.queue.push(['all']);
+        setTimeout(() => this.flush(), 200);
+        return;
+      }
+      this.retriedAuth = false;
       this.online = false; this.status = 'error'; this.lastError = e.message || 'network';
       this.backupLocal();
       if (!this.warned) { this.warned = true; toast('Cloud save failed: ' + this.lastError, 4200); }
@@ -3507,10 +3516,10 @@ setPersistence(auth, browserLocalPersistence).catch(() => { });
 
 window.FBGoogle = {
   ready: true,
-  async current() {
+  async current(force) {
     const u = auth.currentUser;
     if (!u) return null;
-    try { window.FB.token = await u.getIdToken(); } catch (e) { }
+    try { window.FB.token = await u.getIdToken(!!force); } catch (e) { }
     return { email: u.email || '', name: u.displayName || '', uid: u.uid };
   },
   firstAuth(timeout) {
