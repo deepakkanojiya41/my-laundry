@@ -3083,10 +3083,10 @@ Object.assign(ACTIONS, {
   exitPreview: () => exitPreview(),
   passbookLinks: () => openPassbookLinks(),
   cloudSync: async () => {
-    if (window.FBGoogle) { try { const u = await window.FBGoogle.current(); if (u) { } } catch (e) { } }
     FB.warned = false;
-    await FB.write();
-    if (FB.status === 'saved') toast('Saved to the cloud');
+    FB.queue.push(['all']);            /* push everything up */
+    await FB.flush();
+    if (FB.status !== 'error') toast('Saved to the cloud');
     else openSheet({
       title: 'Cloud save failed',
       body: `<div class="card"><div class="h3">Reason</div><div class="sub" style="margin-top:4px">${esc(FB.lastError || 'unknown')}</div></div>
