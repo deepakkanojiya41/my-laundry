@@ -3406,9 +3406,9 @@ Object.assign(ACTIONS, {
         <div class="tiny center" style="margin-bottom:12px;word-break:break-all">${esc(link)}</div>
         <button class="btn ghost sm" data-act="copyAppLink" style="width:100%">Copy link</button>
         <div class="card" style="margin-top:14px"><div class="h3">How it works</div>
-          <div class="sub" style="margin-top:4px;line-height:1.6">1. Customer scans with any camera.<br>
-          2. App browser mein khulta hai — “Add to Home screen” / Install dabao.<br>
-          3. Gmail se sign in karke apni details bhar do; wahi customer tumhari list mein aa jaayega.</div></div>`,
+          <div class="sub" style="margin-top:4px;line-height:1.6">1. The customer scans this code with any phone camera.<br>
+          2. The app opens in the browser — tap “Install” or “Add to Home screen”.<br>
+          3. They sign in with their Gmail and fill in their details, and they appear in your customer list.</div></div>`,
       onMount: w => {
         const b = $('[data-act="copyAppLink"]', w);
         if (b) b.addEventListener('click', () => copyText(link));
