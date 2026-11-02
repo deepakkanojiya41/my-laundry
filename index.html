@@ -228,6 +228,19 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 .listrow:last-child{border-bottom:0}
 .listrow:active{opacity:.7}
 .listrow .nm{font-weight:700;font-size:15px}
+/* customer list row: name + phone on one line, amount on the right */
+.listplain{background:transparent}
+.crow .avatar{width:60px;height:60px;flex:0 0 60px;font-size:20px}
+.crow{display:flex;align-items:center;gap:14px;width:100%;padding:14px 0;border-bottom:1px solid var(--line);background:none;border-left:0;border-right:0;border-top:0;text-align:left;cursor:pointer}
+.crow:last-child{border-bottom:0}
+.crow:active{opacity:.72}
+.crow-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 4px;min-width:0}
+.crow-name{font-weight:700;font-size:16.5px;letter-spacing:-.01em}
+.crow-meta{font-size:14px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crow-amt{flex:0 0 auto;text-align:right;min-width:64px}
+.crow-amt b{display:block;font-size:16.5px;color:var(--due);font-variant-numeric:tabular-nums}
+.crow-amt small{display:block;font-size:12.5px;color:var(--muted);margin-top:1px}
+.crow-amt .settled{font-size:14px;color:var(--muted)}
 .listrow .mt{font-size:12.5px;color:var(--muted);margin-top:1px}
 .listrow .rt{text-align:right;flex:0 0 auto}
 .bal{font-weight:700;color:var(--due);font-variant-numeric:tabular-nums;font-size:15px}
@@ -1697,10 +1710,12 @@ SCREENS.customers = function () {
     ${[['name', 'Name'], ['owes', 'Owes most'], ['recent', 'Recent']].map(([k, l]) => `<button class="chip ${UI.sort === k ? 'on' : ''}" data-act="sortCust" data-v="${k}">${l}</button>`).join('')}
   </div>`;
 
-  const rows = list.length ? `<div class="card flat" style="padding:0 14px">${list.map(x => `<button class="listrow" data-act="openCustomer" data-id="${x.c.id}">
-      ${avatarHTML(x.c.name)}
-      <div class="grow"><div class="nm">${esc(x.c.name)}</div><div class="mt">${esc(x.c.phone || 'no mobile')} · ${x.t.entries} entr${x.t.entries === 1 ? 'y' : 'ies'}</div></div>
-      <div class="rt">${x.t.balance > 0 ? `<div class="bal">${money(x.t.balance)}</div>` : `<div class="bal settled">Settled</div>`}</div>
+  const rows = list.length ? `<div class="listplain">${list.map(x => `<button class="crow" data-act="openCustomer" data-id="${x.c.id}">
+      ${avatarHTML(x.c.name, 'lg')}
+      <div class="grow">
+        <div class="crow-line"><span class="crow-name">${esc(x.c.name)}</span><span class="crow-meta">${esc(x.c.phone ? '+91 ' + x.c.phone : 'no mobile')}, ${x.t.entries} entr${x.t.entries === 1 ? 'y' : 'ies'}</span></div>
+      </div>
+      <div class="crow-amt">${x.t.balance > 0 ? `<b>${money(x.t.balance)}</b><small>owed</small>` : `<span class="settled">Settled</span>`}</div>
     </button>`).join('')}</div>` : emptyState(q ? 'No match' : 'No customers yet', q ? 'Try a different name or number.' : 'Add your first customer to start taking entries.', `<button class="btn primary" data-act="addCustomer">Add customer</button>`);
 
   return { html: head + search + chips + rows };
