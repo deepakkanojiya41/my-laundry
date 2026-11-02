@@ -2813,7 +2813,7 @@ SCREENS.entries = function () {
 
   const hint = UI.preview
     ? `<div class="tiny center" style="margin-top:16px">Snapshot generated ${esc(fmtD(todayISO(), 'short'))} · preview mode</div>`
-    : `<div class="tiny center" style="margin-top:16px">Signed in as ${esc(DB.session ? DB.session.email : '—')} · <button class="linkbtn" data-act="signOutCust" style="font-size:12px">Sign out</button></div>`;
+    : '';
 
   return {
     html: hero + tiles + sel +
