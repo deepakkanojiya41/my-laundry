@@ -608,6 +608,7 @@ const DB = {
   entries: [],
   requests: [],
   notifications: [],
+  invoices: [],
   rates: defaultRates(),
   templates: defaultTemplates(),
   bin: { customers: [], entries: [] },
@@ -726,15 +727,16 @@ const FB = {
     DB.requests = parts.requests || [];
     DB.bin = parts.bin || { customers: [], entries: [] };
     DB.notifications = parts.notifications || [];
+    DB.invoices = parts.invoices || [];
     return true;
   },
 
   async load() {
     try {
-      const [shop, rates, templates, customers, entries, requests, bin, notes, meta] = await Promise.all([
+      const [shop, rates, templates, customers, entries, requests, bin, notes, invs, meta] = await Promise.all([
         this.readDoc('settings/shop'), this.readDoc('settings/rates'), this.readDoc('settings/templates'),
         this.readCol('customers'), this.readCol('entries'), this.readCol('requests'), this.readDoc('settings/bin'),
-        this.readCol('notifications'), this.readDoc('meta/version')
+        this.readCol('notifications'), this.readCol('invoices'), this.readDoc('meta/version')
       ]);
       this.online = true;
       this.version = (meta && meta.data && meta.data.v) || '';
@@ -743,7 +745,7 @@ const FB = {
       this.hydrate({
         shop: shop && shop.data, rates: rates && rates.data && rates.data.items,
         templates: templates && templates.data, customers, entries, requests, bin: bin && bin.data,
-        notifications: notes || []
+        notifications: notes || [], invoices: invs || []
       });
       return true;
     } catch (e) { this.lastError = e.message || 'network'; return false; }
@@ -784,6 +786,7 @@ const FB = {
     if (kind === 'entry') { const e = entryById(id); return e ? ['entries/' + id, e] : null; }
     if (kind === 'request') { const r = DB.requests.find(x => x.id === id); return r ? ['requests/' + id, r] : null; }
     if (kind === 'notification') { const n = DB.notifications.find(x => x.id === id); return n ? ['notifications/' + id, n] : null; }
+    if (kind === 'invoice') { const v = DB.invoices.find(x => x.id === id); return v ? ['invoices/' + id, v] : null; }
     return null;
   },
   async writeOne(kind, id) {
@@ -802,6 +805,7 @@ const FB = {
     DB.entries.forEach(e => jobs.push(this.writeDoc('entries/' + e.id, e)));
     DB.requests.forEach(r => jobs.push(this.writeDoc('requests/' + r.id, r)));
     DB.notifications.forEach(n => jobs.push(this.writeDoc('notifications/' + n.id, n)));
+    DB.invoices.forEach(v => jobs.push(this.writeDoc('invoices/' + v.id, v)));
     await Promise.all(jobs);
     await this.bumpVersion();
     if (!silent) toast('Saved to the cloud');
@@ -829,6 +833,7 @@ const FB = {
         else if (kind === 'rates') { await this.writeDoc('settings/rates', { items: DB.rates }); touched = true; }
         else if (kind === 'templates') { await this.writeDoc('settings/templates', DB.templates); touched = true; }
         else if (kind === 'bin') { await this.writeDoc('settings/bin', DB.bin); touched = true; }
+        else if (kind === 'invoice') { const v = DB.invoices.find(x => x.id === key); if (v) { await this.writeDoc('invoices/' + v.id, v); touched = true; } }
         else if (kind === 'notification') { const n = DB.notifications.find(x => x.id === key); if (n) { await this.writeDoc('notifications/' + n.id, n); touched = true; } }
         else if (kind === 'all') { await this.syncAll(true); touched = false; }
         else if (key) { await this.writeOne(kind, key); touched = true; }
@@ -1319,6 +1324,7 @@ function renderActionBar() {
       ${c.phone ? `<button class="btn" data-act="chat" data-cid="${c.id}">${ic('chat')} Chat</button>` : ''}
       ${c.address ? `<button class="btn" data-act="directions" data-cid="${c.id}">${ic('pin')} Directions</button>` : ''}
       <button class="btn" data-act="openBill" data-cid="${c.id}">${ic('bill')} Bill</button>
+      <button class="btn" data-act="newInvoice" data-cid="${c.id}">${ic('bill')} Invoice</button>
       <button class="btn" data-act="msgSheet" data-cid="${c.id}">${ic('chat')} Message</button>
       <button class="btn" data-act="upiSheet" data-cid="${c.id}">${ic('qr')} UPI QR</button>
       ${t.balance > 0 ? `<button class="btn" data-act="collect" data-cid="${c.id}">${ic('wallet')} Payment</button>` : ''}
@@ -2454,6 +2460,102 @@ function copyText(txt) {
   else toast('Copy not available');
 }
 
+/* ---------- INVOICE MAKER ---------- */
+function openInvoiceSheet(cid) {
+  const c = custById(cid); if (!c) return;
+  const mk = UI.invMonth || monthKey(todayISO());
+  const entries = liveEntries().filter(e => e.customerId === cid && monthKey(e.created) === mk && !SIDE.includes(e.status));
+  const picked = new Set(entries.map(e => e.id));
+  const months = Array.from(new Set(liveEntries().filter(e => e.customerId === cid).map(e => monthKey(e.created)))).sort().reverse().slice(0, 4);
+  if (!months.includes(mk)) months.unshift(mk);
+  openSheet({
+    title: 'Create invoice',
+    sub: c.name,
+    body: `<div class="field"><label class="label">Month</label><div class="chips wrap">${months.map(m => `<button class="chip ${m === mk ? 'on' : ''}" data-invm="${m}">${esc(MON[+m.slice(5, 7) - 1])} ${m.slice(0, 4)}</button>`).join('')}</div></div>
+      <div class="field"><label class="label">Entries to bill</label>
+        <div class="card flat" style="padding:0 12px">
+        ${entries.length ? entries.map(e => `<label class="listrow" style="cursor:pointer">
+          <input type="checkbox" data-inve="${e.id}" ${picked.has(e.id) ? 'checked' : ''} style="width:20px;height:20px;margin-right:4px">
+          <div class="grow"><div class="nm">Entry ${String(e.no).padStart(2, '0')} · ${esc(fmtD(e.created, 'short'))}</div>
+          <div class="mt">${e.items.map(i => i.qty + '× ' + esc(i.name)).join(', ')}</div></div>
+          <div class="rt"><span class="bal" style="color:var(--ink)">${money(entryTotal(e))}</span></div></label>`).join('') : '<div class="tiny" style="padding:12px 0">No entries in this month.</div>'}
+        </div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field"><label class="label">Extra charge</label><input class="input" id="inv-extra" inputmode="decimal" placeholder="0"></div>
+        <div class="field"><label class="label">Discount</label><input class="input" id="inv-disc" inputmode="decimal" placeholder="0"></div>
+      </div>
+      <div class="field"><label class="label">GST %</label><input class="input" id="inv-gst" inputmode="decimal" placeholder="0"></div>
+      <div class="field"><label class="label">Note on invoice</label><input class="input" id="inv-note" placeholder="Optional"></div>`,
+    foot: `<button class="btn primary" id="inv-make">Create invoice</button>`,
+    onMount: w => {
+      let month = mk;
+      $$('[data-invm]', w).forEach(b => b.addEventListener('click', () => { UI.invMonth = b.dataset.invm; requestClose(); setTimeout(() => openInvoiceSheet(cid), 120); }));
+      $('#inv-make', w).addEventListener('click', () => {
+        const chosen = $$('[data-inve]', w).filter(x => x.checked).map(x => x.dataset.inve);
+        if (!chosen.length) return toast('Select at least one entry');
+        const lines = [];
+        chosen.forEach(id => {
+          const e = entryById(id); if (!e) return;
+          e.items.forEach(i => lines.push({ desc: i.name + ' · ' + (i.svc || e.service), qty: Number(i.qty) || 0, price: Number(i.price) || 0 }));
+        });
+        const subtotal = sum(lines, l => l.qty * l.price);
+        const extra = Number($('#inv-extra', w).value) || 0;
+        const discount = Number($('#inv-disc', w).value) || 0;
+        const gstPct = Number($('#inv-gst', w).value) || 0;
+        const taxable = Math.max(0, subtotal + extra - discount);
+        const gst = Math.round(taxable * gstPct) / 100;
+        const inv = {
+          id: uid(), no: nextInvoiceNo(month), customerId: cid, month,
+          date: todayISO(), lines, subtotal, extra, discount, gstPct, gst,
+          total: Math.round(taxable + gst), note: $('#inv-note', w).value.trim(), created: todayISO()
+        };
+        DB.invoices.unshift(inv);
+        persist('invoice', inv.id);
+        requestClose();
+        setTimeout(() => { go('invoice', { id: inv.id }); toast('Invoice ' + inv.no + ' created'); }, 140);
+      });
+    }
+  });
+}
+function nextInvoiceNo(mk) {
+  const seq = DB.invoices.filter(v => v.month === mk).length + 1;
+  return 'INV-' + mk.replace('-', '') + '-' + String(seq).padStart(3, '0');
+}
+function invoiceHTML(inv) {
+  const c = custById(inv.customerId) || { name: 'Customer' };
+  const s = DB.shop;
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+      <div><div class="h2">${esc(s.name)}</div><div class="tiny" style="margin-top:2px">${esc(s.address || '')}${s.phone ? ' · +91 ' + esc(s.phone) : ''}</div></div>
+      <div style="text-align:right"><div class="h3">INVOICE</div><div class="tiny">${esc(inv.no)}</div><div class="tiny">${esc(fmtD(inv.date))}</div></div>
+    </div>
+    <div style="margin-top:12px"><div class="tiny">Billed to</div><div style="font-weight:700">${esc(c.name)}</div>
+      <div class="tiny">${esc(c.address || '')}${c.phone ? ' · ' + esc(c.phone) : ''}</div></div>
+  </div>
+  <div class="card">
+    ${inv.lines.map(l => `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px dashed var(--line)">
+      <span>${esc(l.desc)} <span class="tiny">× ${l.qty} @ ${money(l.price)}</span></span>
+      <b style="font-variant-numeric:tabular-nums">${money(l.qty * l.price)}</b></div>`).join('')}
+    <div style="margin-top:10px">
+      ${rrow('Subtotal', money(inv.subtotal))}
+      ${inv.extra ? rrow('Extra charge', money(inv.extra)) : ''}
+      ${inv.discount ? rrow('Discount', '-' + money(inv.discount)) : ''}
+      ${inv.gst ? rrow('GST ' + inv.gstPct + '%', money(inv.gst)) : ''}
+      ${rrow('Total', money(inv.total), 'total')}
+    </div>
+    ${inv.note ? `<div class="tiny" style="margin-top:10px">Note: ${esc(inv.note)}</div>` : ''}
+    <div class="tiny center" style="margin-top:14px">${esc(s.tagline)}</div>
+  </div>`;
+}
+function invoiceText(inv) {
+  const c = custById(inv.customerId) || { name: 'Customer' };
+  return `${DB.shop.name} — INVOICE ${inv.no}\n${fmtD(inv.date)}\nTo: ${c.name}\n\n` +
+    inv.lines.map(l => `${l.desc} × ${l.qty} = ${money(l.qty * l.price)}`).join('\n') +
+    `\n\nSubtotal: ${money(inv.subtotal)}` + (inv.extra ? `\nExtra: ${money(inv.extra)}` : '') +
+    (inv.discount ? `\nDiscount: -${money(inv.discount)}` : '') + (inv.gst ? `\nGST ${inv.gstPct}%: ${money(inv.gst)}` : '') +
+    `\nTotal: ${money(inv.total)}\n\n${DB.shop.tagline}`;
+}
+
 /* ---------- shop profile ---------- */
 function openShopProfile() {
   const s = DB.shop;
@@ -2930,6 +3032,22 @@ SCREENS.rates = function () {
           <span class="tiny">${svc === 'All' ? 'ironing' : svc === 'Ironing' ? 'ironing' : 'dry clean'}</span></span></div>`).join('') || '<div class="tiny" style="padding:14px 0">No items match.</div>'}
       </div>
       <div class="tiny center" style="margin-top:14px">Prices per piece, inclusive. ${esc(DB.shop.tagline)}</div>`
+  };
+};
+
+/* ---------- INVOICE ---------- */
+SCREENS.invoice = function () {
+  const inv = DB.invoices.find(v => v.id === UI.params.id);
+  if (!inv) return { html: emptyState('Invoice not found', '') };
+  const c = custById(inv.customerId) || { name: 'Customer', phone: '' };
+  return {
+    html: topbar('Invoice ' + inv.no, { back: true, sub: monthLabel(inv.month), right: `<button class="iconbtn no-print" data-act="printBill" aria-label="Print">${ic('print')}</button>` }) +
+      invoiceHTML(inv) +
+      `<div class="btnrow no-print" style="margin-top:14px">
+        <button class="btn ghost" data-act="invoiceWhatsapp" data-id="${inv.id}">Send on WhatsApp</button>
+        <button class="btn" data-act="printBill">Print / PDF</button>
+      </div>
+      <button class="btn ghost no-print" style="margin-top:9px" data-act="invoiceNew" data-cid="${inv.customerId}">New invoice for ${esc(c.name.split(' ')[0])}</button>`
   };
 };
 
@@ -3456,6 +3574,13 @@ Object.assign(ACTIONS, {
   openNotifications: () => {
     myNotifications().forEach(n => { if (!n.read) { n.read = true; persist('notification', n.id); } });
     go('notifications');
+  },
+  newInvoice: t => openInvoiceSheet(t.dataset.cid),
+  invoiceNew: t => openInvoiceSheet(t.dataset.cid),
+  invoiceWhatsapp: t => {
+    const inv = DB.invoices.find(v => v.id === t.dataset.id); if (!inv) return;
+    const c = custById(inv.customerId);
+    openWa(c && c.phone, invoiceText(inv));
   },
   customerAppQr: () => {
     const link = appBase();
