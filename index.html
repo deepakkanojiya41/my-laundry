@@ -2753,6 +2753,27 @@ function custEntryCard(e) {
   </div>`;
 }
 
+/* ---------- first-time customer profile ---------- */
+SCREENS.onboard = function () {
+  const pr = UI.params || {};
+  const nm = pr.name || '';
+  return {
+    html: `<div class="topbar"><div class="grow"><div class="h1">Complete your profile</div>
+        <div class="sub">${esc(pr.email || '')}</div></div></div>
+      <div class="notice">${ic('user', 15)}<div>Ek baar details bhar do — shop ko pickup aur delivery ke liye yahi chahiye.</div></div>
+      <div class="field"><label class="label">Full name</label><input class="input" id="ob-name" value="${esc(nm)}" placeholder="Your name"></div>
+      <div class="field"><label class="label">Mobile number</label><div class="prefix"><span>+91</span><input id="ob-phone" inputmode="numeric" maxlength="10" placeholder="10 digit number"></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field"><label class="label">Flat / house no</label><input class="input" id="ob-flat" placeholder="B-704"></div>
+        <div class="field"><label class="label">Wing / building</label><input class="input" id="ob-wing" placeholder="Sunshine Heights"></div>
+      </div>
+      <div class="field"><label class="label">Area / locality</label><input class="input" id="ob-area" placeholder="Kothrud, Pune"></div>
+      <div class="field"><label class="label">Landmark / note (optional)</label><input class="input" id="ob-note" placeholder="Near city mall"></div>
+      <div id="ob-err" class="err" style="display:none"></div>
+      <button class="btn primary" data-act="onboardSave" style="margin-top:6px">Save and continue</button>`
+  };
+};
+
 /* ---------- MY ENTRIES ---------- */
 SCREENS.entries = function () {
   const c = currentCustomer();
@@ -3217,8 +3238,11 @@ Object.assign(ACTIONS, {
         UI.mode = 'cust'; UI.preview = false; UI.custTab = 'entries'; UI.screen = 'entries'; UI.params = { cid: c.id }; NAVSTACK.length = 0;
         render(); window.scrollTo(0, 0); toast('Welcome, ' + c.name.split(' ')[0]); return;
       }
-      SI.err = 'No account found for ' + email + '. Ask your laundry shop to add it to your profile.';
-      render();
+      /* first time here: let them create their own customer profile */
+      UI.mode = 'cust'; UI.preview = false; UI.custTab = 'entries';
+      UI.screen = 'onboard'; UI.params = { email, uid: user.uid, name: user.name || '' };
+      NAVSTACK.length = 0; render(); window.scrollTo(0, 0);
+      toast('Welcome! Please add your details');
     } catch (e) {
       SI.busy = false;
       const code = (e && e.code) || '';
@@ -3248,6 +3272,36 @@ Object.assign(ACTIONS, {
   },
 
   /* customer app */
+  onboardSave: () => {
+    const name = ($('#ob-name') || {}).value.trim();
+    const phone = normPhone(($('#ob-phone') || {}).value);
+    const flat = ($('#ob-flat') || {}).value.trim();
+    const wing = ($('#ob-wing') || {}).value.trim();
+    const area = ($('#ob-area') || {}).value.trim();
+    const note = ($('#ob-note') || {}).value.trim();
+    const err = $('#ob-err');
+    const bad = m => { err.textContent = m; err.style.display = 'block'; };
+    err.style.display = 'none';
+    if (!name) return bad('Please enter your name.');
+    if (!validPhone(phone)) return bad('Mobile must be 10 digits and start with 6 to 9.');
+    if (!flat) return bad('Flat / house number is required.');
+    if (!wing) return bad('Wing or building name is required.');
+    if (!area) return bad('Area or locality is required.');
+    const pr = UI.params || {};
+    const id = pr.uid || uid();
+    const address = [flat, wing, area].filter(Boolean).join(', ');
+    const c = { id, name, phone, email: (pr.email || '').toLowerCase(), address, flat, wing, note,
+      created: todayISO(), deleted: false, deletedAt: null };
+    const ex = custById(id) || liveCustomers().find(x => x.email && x.email.toLowerCase() === c.email);
+    if (ex) Object.assign(ex, c, { id: ex.id });
+    else DB.customers.push(c);
+    const cid = ex ? ex.id : id;
+    DB.session = { type: 'customer', email: c.email, uid: pr.uid || id, customerId: cid };
+    saveSession(DB.session);
+    persist('customer', cid);
+    enterSession();
+    toast('Profile saved');
+  },
   custFilter: t => { UI.custFilter = t.dataset.v; render(); },
   custUpi: () => openUpi(null),
   callShop: () => {
@@ -3480,6 +3534,12 @@ async function boot() {
   if (user && !DB.session) {
     const s2 = sessionFor(user.email, user.uid);
     if (s2) { DB.session = s2; saveSession(s2); }
+    else if (!handleHash()) {
+      UI.mode = 'cust'; UI.screen = 'onboard';
+      UI.params = { email: user.email, uid: user.uid, name: user.name || '' };
+      render(); window.scrollTo(0, 0);
+      return;
+    }
   }
   if (handleHash()) { /* deep link wins */ }
   else if (DB.session) {
