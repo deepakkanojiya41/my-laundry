@@ -1240,10 +1240,11 @@ const ADMIN_TABS = [
 const CUST_TABS = [
   { id: 'entries', label: 'Home', icon: 'home' },
   { id: 'pickup', label: 'Pickup', icon: 'truck' },
-  { id: 'rates', label: 'Rates', icon: 'bill' }
+  { id: 'rates', label: 'Rates', icon: 'bill' },
+  { id: 'account', label: 'Account', icon: 'user' }
 ];
 const ADMIN_TAB_SCREENS = ['home', 'customers', 'orders', 'analytics', 'settings'];
-const CUST_TAB_SCREENS = ['entries', 'pickup', 'rates'];
+const CUST_TAB_SCREENS = ['entries', 'pickup', 'rates', 'account'];
 
 function navMode() {
   if (UI.mode === 'cust') {
@@ -2864,6 +2865,67 @@ SCREENS.rates = function () {
   };
 };
 
+/* ---------- ACCOUNT (customer) ---------- */
+SCREENS.account = function () {
+  const c = currentCustomer();
+  if (!c) return { html: emptyState('No account', 'Ask your laundry shop to add your profile.') };
+  const t = custTotals(c.id);
+  return {
+    html: `<div class="topbar"><div class="grow"><div class="h1">Account</div><div class="sub">${esc(DB.shop.name)}</div></div></div>
+      <div style="display:flex;gap:14px;align-items:center;margin-bottom:16px">
+        ${avatarHTML(c.name, 'lg')}
+        <div class="grow"><div class="h2" style="font-size:20px">${esc(c.name)}</div>
+          <div class="sub">${esc(c.email || 'no email')}</div></div>
+      </div>
+      ${receipt([
+        rrow('Mobile', c.phone || '—'),
+        rrow('Flat / house', c.flat || '—'),
+        rrow('Wing / building', c.wing || '—'),
+        rrow('Address', c.address || '—'),
+        rrow('Orders', String(t.entries)),
+        rrow('Balance', money(t.balance), t.balance > 0 ? 'due' : 'ok')
+      ])}
+      <div class="btnrow" style="margin-top:4px">
+        <button class="btn ghost" data-act="custEditProfile">Edit details</button>
+        <button class="btn" data-act="custStatement">${ic('bill')} Statement</button>
+      </div>
+      <button class="btn ghost" data-act="signOutCust" style="margin-top:9px">Sign out</button>
+      <div class="tiny center" style="margin-top:16px">${esc(DB.shop.tagline)}</div>`
+  };
+};
+function openCustomerProfileEdit() {
+  const c = currentCustomer(); if (!c) return;
+  openSheet({
+    title: 'Edit your details',
+    body: `<div class="field"><label class="label">Full name</label><input class="input" id="ep-name" value="${esc(c.name)}"></div>
+      <div class="field"><label class="label">Mobile</label><div class="prefix"><span>+91</span><input id="ep-phone" inputmode="numeric" maxlength="10" value="${esc(c.phone || '')}"></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field"><label class="label">Flat / house no</label><input class="input" id="ep-flat" value="${esc(c.flat || '')}"></div>
+        <div class="field"><label class="label">Wing / building</label><input class="input" id="ep-wing" value="${esc(c.wing || '')}"></div>
+      </div>
+      <div class="field"><label class="label">Area / locality</label><input class="input" id="ep-area" value="${esc(c.area || c.address || '')}"></div>
+      <div class="field"><label class="label">Landmark / note</label><input class="input" id="ep-note" value="${esc(c.note || '')}"></div>
+      <div id="ep-err" class="err" style="display:none"></div>`,
+    foot: `<button class="btn primary" id="ep-save">Save changes</button>`,
+    onMount: w => {
+      $('#ep-save', w).addEventListener('click', () => {
+        const name = $('#ep-name', w).value.trim();
+        const phone = normPhone($('#ep-phone', w).value);
+        const flat = $('#ep-flat', w).value.trim();
+        const wing = $('#ep-wing', w).value.trim();
+        const area = $('#ep-area', w).value.trim();
+        const err = $('#ep-err', w);
+        if (!name) { err.textContent = 'Name is required.'; err.style.display = 'block'; return; }
+        if (phone && !validPhone(phone)) { err.textContent = 'Mobile must be 10 digits.'; err.style.display = 'block'; return; }
+        Object.assign(c, { name, phone, flat, wing, area, note: $('#ep-note', w).value.trim() });
+        c.address = [flat, wing, area].filter(Boolean).join(', ') || c.address;
+        persist('customer', c.id);
+        requestClose(); setTimeout(() => { toast('Details updated'); render(); }, 90);
+      });
+    }
+  });
+}
+
 /* ---------- STATEMENT ---------- */
 SCREENS.statement = function () {
   const c = currentCustomer();
@@ -3303,6 +3365,7 @@ Object.assign(ACTIONS, {
     toast('Profile saved');
   },
   custFilter: t => { UI.custFilter = t.dataset.v; render(); },
+  custEditProfile: () => openCustomerProfileEdit(),
   custUpi: () => openUpi(null),
   callShop: () => {
     if (!DB.shop.phone) return toast('The shop has not added a phone number yet');
