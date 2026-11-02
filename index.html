@@ -115,6 +115,7 @@ a{color:var(--focus)}
   border-radius:0;position:relative;overflow:hidden;
 }
 .hero-top{display:flex;align-items:flex-start;gap:10px}
+.hero-logo{width:46px;height:46px;flex:0 0 46px;border-radius:13px;display:block;box-shadow:0 4px 14px rgba(0,0,0,.22);background:var(--brand)}
 .hero-greet{font-size:13px;opacity:.78;font-weight:500}
 .hero-name{font-family:"Bricolage Grotesque",sans-serif;font-size:20px;font-weight:700;letter-spacing:-.02em}
 .hero-shop{font-size:13px;opacity:.8;margin-top:2px}
@@ -1569,10 +1570,9 @@ SCREENS.home = function () {
       <div class="grow">
         <div class="hero-greet">${esc(greeting())}</div>
         <div class="hero-name">${esc(DB.shop.owner || DB.shop.name)}</div>
-        <div class="hero-shop">${esc(DB.shop.name)}</div>
         <div class="hero-date">${esc(fmtD(T, 'wd'))}</div>
       </div>
-      <button class="iconbtn" data-act="goTab" data-tab="settings" aria-label="Settings">${ic('settings')}</button>
+      <img class="hero-logo" src="icon-192.png" alt="${esc(DB.shop.name)} logo">
     </div>
     <div class="hero-stat">${open.length} open order${open.length === 1 ? '' : 's'}</div>
     <div class="hero-line">${open.length ? `${ready.length} ready for delivery, ${overdue.length} overdue.` : 'No open orders.'}</div>
