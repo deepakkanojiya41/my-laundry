@@ -34,6 +34,14 @@ service cloud.firestore {
       allow update, delete: if owner();
     }
 
+    /* in-app notifications: readable/updatable by the customer they belong to */
+    match /notifications/{id} {
+      allow read: if owner() || (signedIn() && resource.data.customerEmail == myEmail());
+      allow create: if signedIn();
+      allow update: if owner() || (signedIn() && resource.data.customerEmail == myEmail());
+      allow delete: if owner();
+    }
+
     match /app/{doc} { allow read, write: if owner(); }
 
     match /{document=**} { allow read, write: if false; }

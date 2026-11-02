@@ -115,6 +115,8 @@ a{color:var(--focus)}
   border-radius:0;position:relative;overflow:hidden;
 }
 .hero-top{display:flex;align-items:flex-start;gap:10px}
+.hero-bell{position:relative;background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.3);color:var(--on-brand)}
+.hero-bell .badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:var(--due);color:#fff;font-size:10.5px;font-weight:800;display:grid;place-items:center;padding:0 4px;border:2px solid var(--brand)}
 .hero-logo{width:46px;height:46px;flex:0 0 46px;border-radius:13px;display:block;box-shadow:0 4px 14px rgba(0,0,0,.22);background:var(--brand)}
 .hero-greet{font-size:13px;opacity:.78;font-weight:500}
 .hero-name{font-family:"Bricolage Grotesque",sans-serif;font-size:20px;font-weight:700;letter-spacing:-.02em}
@@ -337,10 +339,11 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 /* toast / snack */
 #toast{position:fixed;left:50%;bottom:calc(96px + var(--safe-b));transform:translate(-50%,14px);z-index:200;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:13.5px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;max-width:88vw;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.28)}
 #toast.on{opacity:1;transform:translate(-50%,0)}
+#toast.stack{bottom:calc(152px + var(--safe-b))}
 #snack{position:fixed;left:12px;right:12px;bottom:calc(88px + var(--safe-b));z-index:190;max-width:496px;margin:0 auto;background:var(--ink);color:var(--bg);border-radius:14px;padding:12px 12px 12px 16px;display:flex;align-items:center;gap:10px;font-size:13.5px;font-weight:600;opacity:0;transform:translateY(16px);pointer-events:none;transition:opacity .22s,transform .22s;box-shadow:0 10px 30px rgba(0,0,0,.3)}
 #snack.on{opacity:1;transform:none;pointer-events:auto}
 #snack .sact{background:transparent;border:1.5px solid rgba(255,255,255,.34);color:inherit;border-radius:10px;padding:6px 12px;font-weight:700;font-size:13px;cursor:pointer;flex:0 0 auto;margin-left:auto}
-#snack span{flex:1;min-width:0}
+#snack span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* analytics */
 .bars{display:flex;align-items:flex-end;gap:6px;height:132px;padding-top:6px}
@@ -514,6 +517,7 @@ const ICON = {
   grid: '<rect x="3.4" y="3.4" width="7" height="7" rx="1.6"/><rect x="13.6" y="3.4" width="7" height="7" rx="1.6"/><rect x="3.4" y="13.6" width="7" height="7" rx="1.6"/><rect x="13.6" y="13.6" width="7" height="7" rx="1.6"/>',
   truck: '<path d="M2.5 6.5h11v10h-11z"/><path d="M13.5 9.5h4l3 3.2v3.8h-7z"/><circle cx="6.5" cy="18.5" r="1.9"/><circle cx="17" cy="18.5" r="1.9"/>',
   clock: '<circle cx="12" cy="12" r="8.6"/><path d="M12 7.4V12l3.2 2"/>',
+  bell: '<path d="M18 15.5V11a6 6 0 1 0-12 0v4.5L4.5 18h15z"/><path d="M10 21a2.2 2.2 0 0 0 4 0"/>',
   install: '<rect x="5" y="2.6" width="14" height="18.8" rx="3"/><path d="M10.6 18.6h2.8"/>'
 };
 function ic(n, size) { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${size ? ` style="width:${size}px;height:${size}px"` : ''}>${ICON[n] || ''}</svg>`; }
@@ -603,6 +607,7 @@ const DB = {
   customers: [],
   entries: [],
   requests: [],
+  notifications: [],
   rates: defaultRates(),
   templates: defaultTemplates(),
   bin: { customers: [], entries: [] },
@@ -720,15 +725,16 @@ const FB = {
     DB.entries = parts.entries || [];
     DB.requests = parts.requests || [];
     DB.bin = parts.bin || { customers: [], entries: [] };
+    DB.notifications = parts.notifications || [];
     return true;
   },
 
   async load() {
     try {
-      const [shop, rates, templates, customers, entries, requests, bin, meta] = await Promise.all([
+      const [shop, rates, templates, customers, entries, requests, bin, notes, meta] = await Promise.all([
         this.readDoc('settings/shop'), this.readDoc('settings/rates'), this.readDoc('settings/templates'),
         this.readCol('customers'), this.readCol('entries'), this.readCol('requests'), this.readDoc('settings/bin'),
-        this.readDoc('meta/version')
+        this.readCol('notifications'), this.readDoc('meta/version')
       ]);
       this.online = true;
       this.version = (meta && meta.data && meta.data.v) || '';
@@ -736,7 +742,8 @@ const FB = {
       if (empty) { await this.migrateLegacy(); return false; }
       this.hydrate({
         shop: shop && shop.data, rates: rates && rates.data && rates.data.items,
-        templates: templates && templates.data, customers, entries, requests, bin: bin && bin.data
+        templates: templates && templates.data, customers, entries, requests, bin: bin && bin.data,
+        notifications: notes || []
       });
       return true;
     } catch (e) { this.lastError = e.message || 'network'; return false; }
@@ -776,6 +783,7 @@ const FB = {
     if (kind === 'customer') { const c = custById(id); return c ? ['customers/' + id, c] : null; }
     if (kind === 'entry') { const e = entryById(id); return e ? ['entries/' + id, e] : null; }
     if (kind === 'request') { const r = DB.requests.find(x => x.id === id); return r ? ['requests/' + id, r] : null; }
+    if (kind === 'notification') { const n = DB.notifications.find(x => x.id === id); return n ? ['notifications/' + id, n] : null; }
     return null;
   },
   async writeOne(kind, id) {
@@ -793,6 +801,7 @@ const FB = {
     DB.customers.forEach(c => jobs.push(this.writeDoc('customers/' + c.id, c)));
     DB.entries.forEach(e => jobs.push(this.writeDoc('entries/' + e.id, e)));
     DB.requests.forEach(r => jobs.push(this.writeDoc('requests/' + r.id, r)));
+    DB.notifications.forEach(n => jobs.push(this.writeDoc('notifications/' + n.id, n)));
     await Promise.all(jobs);
     await this.bumpVersion();
     if (!silent) toast('Saved to the cloud');
@@ -820,6 +829,7 @@ const FB = {
         else if (kind === 'rates') { await this.writeDoc('settings/rates', { items: DB.rates }); touched = true; }
         else if (kind === 'templates') { await this.writeDoc('settings/templates', DB.templates); touched = true; }
         else if (kind === 'bin') { await this.writeDoc('settings/bin', DB.bin); touched = true; }
+        else if (kind === 'notification') { const n = DB.notifications.find(x => x.id === key); if (n) { await this.writeDoc('notifications/' + n.id, n); touched = true; } }
         else if (kind === 'all') { await this.syncAll(true); touched = false; }
         else if (key) { await this.writeOne(kind, key); touched = true; }
       }
@@ -985,7 +995,10 @@ const normPhone = p => String(p || '').replace(/\D/g, '').replace(/^(?:\+?91)/, 
 let toastT = null;
 function toast(msg, ms) {
   const el = $('#toast'); if (!el) return;
-  el.textContent = msg; el.classList.add('on');
+  const sn = $('#snack');
+  el.textContent = msg;
+  el.classList.toggle('stack', !!(sn && sn.classList.contains('on')));
+  el.classList.add('on');
   clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), ms || 2200);
 }
 let snackT = null, snackFn = null;
@@ -994,6 +1007,7 @@ function snack(msg, actionLabel, fn, ms) {
   snackFn = fn || null;
   el.innerHTML = `<span>${esc(msg)}</span>${actionLabel ? `<button class="sact" data-snack>${esc(actionLabel)}</button>` : ''}`;
   el.classList.add('on');
+  const t = $('#toast'); if (t) t.classList.remove('on');
   clearTimeout(snackT);
   snackT = setTimeout(hideSnack, ms || 8000);
 }
@@ -1447,6 +1461,27 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && ['+', '-', '=', '0'].includes(e.key)) e.preventDefault();
 });
 
+/* ---------- in-app notifications ---------- */
+function notify(to, customerId, title, body) {
+  const c = customerId ? custById(customerId) : null;
+  DB.notifications.unshift({
+    id: uid(), to, customerId: customerId || '',
+    customerEmail: (c && c.email ? c.email : '').toLowerCase(),
+    title, body: body || '', at: new Date().toISOString(), read: false
+  });
+  if (DB.notifications.length > 120) DB.notifications.length = 120;
+  persist('notification', DB.notifications[0].id);
+  if (!sheets.length && UI.screen !== 'signin') render();
+}
+function myNotifications() {
+  if (UI.mode === 'cust') {
+    const c = currentCustomer();
+    return DB.notifications.filter(n => n.to === 'customer' && (!n.customerId || (c && n.customerId === c.id)));
+  }
+  return DB.notifications.filter(n => n.to === 'admin');
+}
+function unreadCount() { return myNotifications().filter(n => !n.read).length; }
+
 /* ---------- copying: app text cannot be selected or copied ---------- */
 const inField = t => !!(t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]'));
 document.addEventListener('copy', e => {
@@ -1573,6 +1608,7 @@ SCREENS.home = function () {
         <div class="hero-name">${esc(DB.shop.owner || DB.shop.name)}</div>
         <div class="hero-date">${esc(fmtD(T, 'wd'))}</div>
       </div>
+      <button class="iconbtn hero-bell" data-act="openNotifications" aria-label="Notifications">${ic('bell')}${unreadCount() ? `<span class="badge">${unreadCount()}</span>` : ''}</button>
       <img class="hero-logo" src="icon-192.png" alt="${esc(DB.shop.name)} logo">
     </div>
     <div class="hero-stat">${open.length} open order${open.length === 1 ? '' : 's'}</div>
@@ -2585,6 +2621,7 @@ function acceptRequest(id) {
   const e = { id: uid(), no: nextEntryNo(todayISO()), customerId: c.id, customerEmail: (c.email || '').toLowerCase(), service: r.service, items: [{ name: 'Clothes', qty: r.count || 1, price, svc: r.service }], status: 'Processing', note: r.note || '', due: dateAdd(r.date || todayISO(), 1), created: todayISO(), payments: [], deleted: false, deletedAt: null };
   DB.entries.push(e);
   r.status = 'accepted'; persist('request', r.id); persist('entry', e.id);
+  notify('customer', c.id, 'Pickup confirmed', 'Your pickup on ' + fmtD(r.date, 'short') + ' (' + r.slot.split(' ')[0] + ') is confirmed.');
   render();
   toast('Request accepted · entry ' + String(e.no).padStart(2, '0'));
   snack('Send a confirmation to ' + r.name.split(' ')[0] + '?', 'WhatsApp', () => {
@@ -2798,6 +2835,7 @@ SCREENS.entries = function () {
       ${t.balance > 0 && DB.shop.upi ? `<button class="btn sm" data-act="custUpi" style="background:var(--on-brand);color:var(--brand);border-color:var(--on-brand);font-weight:700">${ic('qr')} Pay via UPI</button>` : ''}
       ${DB.shop.phone ? `<button class="btn sm" data-act="callShop" style="background:rgba(255,255,255,.14);color:var(--on-brand);border-color:rgba(255,255,255,.34)">${ic('phone')} Call shop</button>` : ''}
     </div>
+    <button class="iconbtn hero-bell" data-act="openNotifications" aria-label="Notifications" style="position:absolute;top:14px;right:14px">${ic('bell')}${unreadCount() ? `<span class="badge">${unreadCount()}</span>` : ''}</button>
     <div class="hero-art" style="bottom:-6px">${machineSVG(84)}</div>
   </div>`;
 
@@ -2893,6 +2931,21 @@ SCREENS.rates = function () {
           <span class="tiny">${svc === 'All' ? 'ironing' : svc === 'Ironing' ? 'ironing' : 'dry clean'}</span></span></div>`).join('') || '<div class="tiny" style="padding:14px 0">No items match.</div>'}
       </div>
       <div class="tiny center" style="margin-top:14px">Prices per piece, inclusive. ${esc(DB.shop.tagline)}</div>`
+  };
+};
+
+/* ---------- NOTIFICATIONS ---------- */
+SCREENS.notifications = function () {
+  const list = myNotifications();
+  const mine = UI.mode === 'cust';
+  return {
+    html: topbar('Notifications', { back: true, sub: list.length ? list.filter(n => !n.read).length + ' unread' : 'Nothing yet' }) +
+      (list.length ? list.map(n => `<div class="card" style="${n.read ? '' : 'border-color:var(--brand)'}">
+        <div class="card-head"><div class="h3">${esc(n.title)}</div>${n.read ? '' : '<span class="pill st-processing"><i class="dot"></i>New</span>'}</div>
+        ${n.body ? `<div class="sub">${esc(n.body)}</div>` : ''}
+        <div class="tiny" style="margin-top:6px">${esc(fmtD((n.at || '').slice(0, 10), 'short'))} · ${esc((n.at || '').slice(11, 16))}</div>
+      </div>`).join('')
+      : emptyState('No notifications', mine ? 'Updates about your orders will appear here.' : 'New pickup requests and updates will appear here.'))
   };
 };
 
@@ -3072,6 +3125,8 @@ Object.assign(ACTIONS, {
   setStatus: t => {
     const e = entryById(t.dataset.id); if (!e) return;
     const from = e.status; e.status = t.dataset.v; persist('entry', e.id);
+    const cst = custById(e.customerId);
+    if (cst) notify('customer', cst.id, 'Entry ' + String(e.no).padStart(2, '0') + ' · ' + e.status, 'Your order is now ' + e.status.toLowerCase() + '.');
     const backToDetail = sheets.length > 1;
     requestClose();
     setTimeout(() => { render(); if (!backToDetail) openEntry(e.id); }, 110);
@@ -3085,7 +3140,9 @@ Object.assign(ACTIONS, {
   nextStep: t => {
     const e = entryById(t.dataset.id); if (!e) return;
     const nxt = NEXT_STATUS[e.status]; if (!nxt) return;
-    e.status = nxt; persist('entry', e.id); render();
+    e.status = nxt; persist('entry', e.id);
+    notify('customer', e.customerId, 'Entry ' + String(e.no).padStart(2, '0') + ' · ' + nxt, 'Your order is now ' + nxt.toLowerCase() + '.');
+    render();
     const c = custById(e.customerId);
     toast('Entry ' + String(e.no).padStart(2, '0') + ' · ' + nxt);
     snack('Send ' + nxt.toLowerCase() + ' update to ' + (c ? c.name.split(' ')[0] : '') + '?', 'WhatsApp', () => {
@@ -3397,6 +3454,10 @@ Object.assign(ACTIONS, {
   },
   custFilter: t => { UI.custFilter = t.dataset.v; render(); },
   custEditProfile: () => openCustomerProfileEdit(),
+  openNotifications: () => {
+    myNotifications().forEach(n => { if (!n.read) { n.read = true; persist('notification', n.id); } });
+    go('notifications');
+  },
   customerAppQr: () => {
     const link = appBase();
     openSheet({
@@ -3447,6 +3508,7 @@ Object.assign(ACTIONS, {
     };
     DB.requests.push(req);
     persist('request', req.id);
+    notify('admin', '', 'New pickup request', (req.name || 'A customer') + ' · ' + fmtD(req.date, 'short') + ' · ' + req.slot.split(' ')[0] + ' · ' + req.count + ' pcs');
     SENT.unshift({ date, slot, count, service: svc });
     toast('Pickup request sent to the shop');
     UI.screen = 'pickup'; UI.custTab = 'pickup'; UI.params = {};
