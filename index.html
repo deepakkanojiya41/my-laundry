@@ -1872,6 +1872,7 @@ SCREENS.settings = function () {
         srow('chat', 'WhatsApp messages', '4 templates', 'goTemplates')
       ].join(''))}
     ${sec('Customer app', [
+        srow('qr', 'Customer app QR', 'Scan to install', 'customerAppQr'),
         srow('users', 'Switch to customer app', '', 'switchToCustomer'),
         srow('link', 'Get passbook links', '', 'passbookLinks')
       ].join(''))}
@@ -3396,6 +3397,24 @@ Object.assign(ACTIONS, {
   },
   custFilter: t => { UI.custFilter = t.dataset.v; render(); },
   custEditProfile: () => openCustomerProfileEdit(),
+  customerAppQr: () => {
+    const link = appBase();
+    openSheet({
+      title: 'Customer app QR',
+      sub: 'Customer scans this once',
+      body: `<div class="qrbox">${qrSVG(link, 220)}</div>
+        <div class="tiny center" style="margin-bottom:12px;word-break:break-all">${esc(link)}</div>
+        <button class="btn ghost sm" data-act="copyAppLink" style="width:100%">Copy link</button>
+        <div class="card" style="margin-top:14px"><div class="h3">How it works</div>
+          <div class="sub" style="margin-top:4px;line-height:1.6">1. Customer scans with any camera.<br>
+          2. App browser mein khulta hai — “Add to Home screen” / Install dabao.<br>
+          3. Gmail se sign in karke apni details bhar do; wahi customer tumhari list mein aa jaayega.</div></div>`,
+      onMount: w => {
+        const b = $('[data-act="copyAppLink"]', w);
+        if (b) b.addEventListener('click', () => copyText(link));
+      }
+    });
+  },
   custUpi: () => openUpi(null),
   callShop: () => {
     if (!DB.shop.phone) return toast('The shop has not added a phone number yet');
