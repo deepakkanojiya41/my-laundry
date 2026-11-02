@@ -856,6 +856,7 @@ const FB = {
   },
   async tick() {
     if (document.visibilityState === 'hidden') return;
+    if (this.saving || this.queue.length) return;   /* never overwrite unsaved local edits */
     try {
       const meta = await this.readDoc('meta/version');
       const v = (meta && meta.data && meta.data.v) || '';
