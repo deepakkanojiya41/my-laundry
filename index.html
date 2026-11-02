@@ -2580,7 +2580,7 @@ function acceptRequest(id) {
     DB.customers.push(c); persist('customer', c.id);
   }
   const price = (DB.rates.find(x => /^shirt$/i.test(x.name)) || { price: { Ironing: 10, 'Dry clean': 80 } }).price[r.service] || 10;
-  const e = { id: uid(), no: nextEntryNo(todayISO()), customerId: c.id, customerEmail: (c.email || '').toLowerCase(), service: r.service, items: [{ name: 'Clothes', qty: r.count || 1, price, svc: r.service }], status: 'Pickup', note: r.note || '', due: dateAdd(r.date || todayISO(), 1), created: todayISO(), payments: [], deleted: false, deletedAt: null };
+  const e = { id: uid(), no: nextEntryNo(todayISO()), customerId: c.id, customerEmail: (c.email || '').toLowerCase(), service: r.service, items: [{ name: 'Clothes', qty: r.count || 1, price, svc: r.service }], status: 'Processing', note: r.note || '', due: dateAdd(r.date || todayISO(), 1), created: todayISO(), payments: [], deleted: false, deletedAt: null };
   DB.entries.push(e);
   r.status = 'accepted'; persist('request', r.id); persist('entry', e.id);
   render();
