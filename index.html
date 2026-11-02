@@ -3090,11 +3090,12 @@ Object.assign(ACTIONS, {
     else openSheet({
       title: 'Cloud save failed',
       body: `<div class="card"><div class="h3">Reason</div><div class="sub" style="margin-top:4px">${esc(FB.lastError || 'unknown')}</div></div>
+        <div class="card"><div class="h3">Signed in as</div><div class="sub" style="margin-top:4px">${esc((DB.session && DB.session.email) || 'not signed in')}${DB.session && DB.session.uid ? '' : ' · no Firebase user'}</div></div>
         <div class="card"><div class="h3">Check these</div><div class="sub" style="margin-top:4px;line-height:1.6">
-        1. Realtime Database rules allow <code>auth != null</code> (or <code>true</code> for testing).<br>
-        2. Authentication → Anonymous is enabled, or you are signed in with Google.<br>
-        3. The database exists in the same project (Realtime Database, not Firestore).<br>
-        4. Authentication → Anonymous must be enabled, or sign in with Google below.</div></div>
+        1. Firebase console → <b>Firestore Database</b> exists in this project (not Realtime Database).<br>
+        2. <b>Firestore → Rules</b>: the owner rule must match your exact email and <code>email_verified == true</code>.<br>
+        3. You are signed in with <b>Google</b> — anonymous sign-in is disabled by design.<br>
+        4. The signed-in email above must equal the email in the rules.</div></div>
         ${DB.session && DB.session.uid ? '' : `<button class="btn primary" data-gsign style="margin-top:4px">Sign in with Google to sync</button>`}`,
       foot: `<button class="btn primary" data-close2>OK</button>`,
       onMount: w => {
