@@ -1609,7 +1609,6 @@ SCREENS.home = function () {
         <div class="hero-date">${esc(fmtD(T, 'wd'))}</div>
       </div>
       <button class="iconbtn hero-bell" data-act="openNotifications" aria-label="Notifications">${ic('bell')}${unreadCount() ? `<span class="badge">${unreadCount()}</span>` : ''}</button>
-      <img class="hero-logo" src="icon-192.png" alt="${esc(DB.shop.name)} logo">
     </div>
     <div class="hero-stat">${open.length} open order${open.length === 1 ? '' : 's'}</div>
     <div class="hero-line">${open.length ? `${ready.length} ready for delivery, ${overdue.length} overdue.` : 'No open orders.'}</div>
