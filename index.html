@@ -1630,9 +1630,7 @@ SCREENS.home = function () {
         <div class="hero-greet-big">${esc(greeting())}</div>
         <div class="hero-sub">${esc(DB.shop.name)}, ${esc(fmtD(T, 'dow'))}</div>
       </div>
-      ${unreadCount()
-        ? `<button class="iconbtn hero-bell" data-act="openNotifications" aria-label="Notifications">${ic('bell')}<span class="badge">${unreadCount()}</span></button>`
-        : `<button class="iconbtn hero-bell" data-act="goTab" data-tab="settings" aria-label="Settings">${ic('settings')}</button>`}
+      <button class="iconbtn hero-bell" data-act="openNotifications" aria-label="Notifications">${ic('bell')}${unreadCount() ? `<span class="badge">${unreadCount()}</span>` : ''}</button>
     </div>
     <div class="hero-stat">${open.length} open order${open.length === 1 ? '' : 's'}</div>
     <div class="hero-line">${overdue.length ? `${overdue.length} overdue.` : (ready.length ? `${ready.length} ready for delivery.` : 'Nothing overdue.')}</div>
