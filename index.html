@@ -101,7 +101,7 @@ a{color:var(--focus)}
 
 /* ---------- top bar ---------- */
 .topbar{display:flex;align-items:center;gap:10px;padding:14px 0 12px;position:sticky;top:0;z-index:20;background:var(--bg)}
-.topbar:after{content:"";position:absolute;left:0;right:0;top:100%;height:16px;background:linear-gradient(var(--bg),transparent);pointer-events:none}
+
 .topbar .h1{font-size:21px}
 .iconbtn{width:40px;height:40px;flex:0 0 40px;display:grid;place-items:center;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);cursor:pointer}
 .iconbtn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
@@ -2827,22 +2827,52 @@ SCREENS.entries = function () {
 
 /* ---------- PICKUP ---------- */
 const SENT = [];
+function myRequests() {
+  const c = currentCustomer(); if (!c) return [];
+  const email = (c.email || '').toLowerCase();
+  return DB.requests
+    .filter(r => r.customerId === c.id || (email && (r.customerEmail || '').toLowerCase() === email))
+    .sort((a, b) => (b.created + b.date).localeCompare(a.created + a.date));
+}
 SCREENS.pickup = function () {
+  const c = currentCustomer() || { address: '' };
+  const reqs = myRequests();
+  const pill = st => st === 'accepted'
+    ? '<span class="pill st-ready"><i class="dot"></i>Accepted</span>'
+    : st === 'rejected'
+      ? '<span class="pill st-delivered"><i class="dot"></i>Rejected</span>'
+      : '<span class="pill st-processing"><i class="dot"></i>Pending</span>';
+  return {
+    html: `<div class="topbar"><div class="grow"><div class="h1">Pickup</div><div class="sub">${esc(DB.shop.name)}</div></div></div>
+    <button class="btn primary" data-act="newPickup" style="margin-bottom:16px">${ic('plus')} Request a pickup</button>
+    ${reqs.length ? `<div class="sec-title"><div class="h2">Your requests</div><div class="tiny">${reqs.length}</div></div>` +
+      reqs.map(r => `<div class="card">
+        <div class="card-head"><div><div class="h3">${esc(fmtD(r.date))}</div><div class="tiny">${esc(r.slot)}</div></div>${pill(r.status)}</div>
+        <div class="sub">${r.count} pcs · ${esc(r.service)}</div>
+        ${r.address ? `<div class="tiny" style="margin-top:2px">${esc(r.address)}</div>` : ''}
+        ${r.note ? `<div class="tiny" style="margin-top:2px">Note: ${esc(r.note)}</div>` : ''}
+      </div>`).join('')
+      : emptyState('No pickup requests yet', 'Tap “Request a pickup” and we will collect your clothes.', `<button class="btn primary" data-act="newPickup">Request a pickup</button>`)}
+    ${SENT.length ? `<div class="sec-title"><div class="h2">Sent from this phone</div></div><div class="card flat" style="padding:0 14px">${SENT.map(x => `<div style="padding:12px 0;border-bottom:1px solid var(--line)">
+      <div class="h3">${esc(fmtD(x.date))} · ${esc(x.slot.split(' ')[0])}</div><div class="tiny">${x.count} pcs · ${esc(x.service)}</div></div>`).join('')}</div>` : ''}`
+  };
+};
+
+/* the request form lives on its own screen */
+SCREENS.newpickup = function () {
   const c = currentCustomer() || { address: '' };
   const day = UI.pickDate || todayISO();
   return {
-    html: `<div class="topbar"><div class="grow"><div class="h1">Request a pickup</div><div class="sub">${esc(DB.shop.name)}</div></div></div>
-    <div class="card">
+    html: topbar('Request a pickup', { back: true, sub: DB.shop.name }) +
+    `<div class="card">
       <div class="field"><label class="label">Pickup date</label><input class="input" type="date" id="pu-date" value="${day}" min="${todayISO()}"></div>
-      <div class="field"><label class="label">Time slot</label><div class="chips wrap">${SLOTS.map((s, i) => `<button class="chip ${(UI.pickSlot || SLOTS[0]) === s ? 'on' : ''}" data-act="pickSlot" data-v="${esc(s)}">${esc(s.split(' ')[0])}</button>`).join('')}</div></div>
+      <div class="field"><label class="label">Time slot</label><div class="chips wrap">${SLOTS.map(s => `<button class="chip ${(UI.pickSlot || SLOTS[0]) === s ? 'on' : ''}" data-act="pickSlot" data-v="${esc(s)}">${esc(s.split(' ')[0])}</button>`).join('')}</div></div>
       <div class="field"><label class="label">Service</label><div class="chips">${SERVICES.map(s => `<button class="chip ${(UI.pickSvc || 'Ironing') === s ? 'on' : ''}" data-act="pickSvc" data-v="${esc(s)}">${esc(s)}</button>`).join('')}</div></div>
       <div class="field"><label class="label">Clothes estimate</label><input class="input" id="pu-count" inputmode="numeric" placeholder="e.g. 6"></div>
       <div class="field"><label class="label">Address</label><textarea class="input" id="pu-addr">${esc(c.address || '')}</textarea></div>
       <div class="field"><label class="label">Note</label><input class="input" id="pu-note" placeholder="Optional"></div>
       <button class="btn primary" data-act="pickSend">Send pickup request</button>
-    </div>
-    ${SENT.length ? `<div class="sec-title"><div class="h2">Sent from this phone</div></div><div class="card flat" style="padding:0 14px">${SENT.map(s => `<div style="padding:12px 0;border-bottom:1px solid var(--line)">
-      <div class="h3">${esc(fmtD(s.date))} · ${esc(s.slot.split(' ')[0])}</div><div class="tiny">${s.count} pcs · ${esc(s.service)}</div></div>`).join('')}</div>` : ''}`
+    </div>`
   };
 };
 
@@ -3397,11 +3427,13 @@ Object.assign(ACTIONS, {
       status: 'requested', created: todayISO()
     };
     DB.requests.push(req);
-    persist('request', req.id);                 /* goes straight to the shop's Orders */
+    persist('request', req.id);
     SENT.unshift({ date, slot, count, service: svc });
     toast('Pickup request sent to the shop');
-    render();
-  }
+    UI.screen = 'pickup'; UI.custTab = 'pickup'; UI.params = {};
+    render(); window.scrollTo(0, 0);
+  },
+  newPickup: () => { UI.pickDate = todayISO(); go('newpickup'); },
 });
 
 
