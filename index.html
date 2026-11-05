@@ -1634,9 +1634,9 @@ SCREENS.home = function () {
     <div class="hero-stat">${open.length} open order${open.length === 1 ? '' : 's'}</div>
     <div class="hero-line">${overdue.length ? `${overdue.length} overdue.` : (ready.length ? `${ready.length} ready for delivery.` : 'Nothing overdue.')}</div>
     <div class="clothesline">
-      <svg class="rope" viewBox="0 0 320 74" preserveAspectRatio="none" aria-hidden="true"><path d="M-4 14 Q 80 34 160 18 T 324 12" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2.4" stroke-linecap="round"/></svg>
-      <div class="tags">${line.map(x => `<div class="cl-tag ${x.k}" style="margin-top:${x.k === 'cl-overdue' ? 2 : x.k === 'cl-ready' ? 9 : 14}px">${String(x.e.no).padStart(2, '0')}</div>`).join('')}
-      ${more ? `<div class="cl-tag cl-other" style="margin-top:14px">+${more}</div>` : ''}</div>
+      <svg class="rope" viewBox="0 0 320 74" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="14" x2="320" y2="14" stroke="rgba(255,255,255,.55)" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <div class="tags">${line.map(x => `<div class="cl-tag ${x.k}">${String(x.e.no).padStart(2, '0')}</div>`).join('')}
+      ${more ? `<div class="cl-tag cl-other">+${more}</div>` : ''}</div>
     </div>
     <div class="hero-art">${machineSVG(112)}</div>
   </div>`;
