@@ -295,7 +295,9 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 .navbtn{position:relative;z-index:1;border:0;background:none;height:58px;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10px;font-weight:700;line-height:1.1;color:var(--muted);cursor:pointer;padding:0 1px;letter-spacing:0;-webkit-tap-highlight-color:transparent}
 .navbtn span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .navbtn svg{width:21px;height:21px;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.85;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s ease}
+.navbtn .nbadge{position:absolute;top:5px;left:50%;transform:translateX(6px);min-width:17px;height:17px;border-radius:9px;background:var(--due);color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center;padding:0 4px;border:1.5px solid var(--surface)}
 .navbtn.on{color:var(--on-brand)}
+.navbtn.on .nbadge{border-color:var(--brand)}
 .navbtn.on svg{transform:translateY(-1px) scale(1.04)}
 .navbtn:focus-visible{outline:2px solid var(--focus);outline-offset:-3px;border-radius:12px}
 
@@ -1300,7 +1302,10 @@ function renderNav() {
   const idx = Math.max(0, tabs.findIndex(t => t.id === active));
   nav.innerHTML = `<div class="navinner"><div class="navgrid" style="--n:${tabs.length}">
     <div class="navpill" style="--i:${idx}"></div>
-    ${tabs.map(t => `<button class="navbtn ${t.id === active ? 'on' : ''}" data-act="tab" data-tab="${t.id}" aria-current="${t.id === active ? 'page' : 'false'}">${ic(t.icon)}<span>${t.label}</span></button>`).join('')}
+    ${tabs.map(t => {
+      const pending = (t.id === 'orders' && UI.mode === 'admin') ? DB.requests.filter(r => r.status === 'requested').length : 0;
+      return `<button class="navbtn ${t.id === active ? 'on' : ''}" data-act="tab" data-tab="${t.id}" aria-current="${t.id === active ? 'page' : 'false'}">${ic(t.icon)}${pending ? `<span class="nbadge">${pending}</span>` : ''}<span>${t.label}</span></button>`;
+    }).join('')}
   </div></div>`;
 }
 
