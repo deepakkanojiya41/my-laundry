@@ -603,10 +603,10 @@ const AV_COLORS = [
 const ADMIN_EMAIL_FALLBACK = 'deepakkanojiya41@gmail.com';
 function defaultTemplates() {
   return {
-    daily: 'Namaste {customerName}!\n{shopName} — {date}\nClothes today: {clothesCount}\nBill today: {totalClothes}\nBalance due: {balance}\nPay: {upiPayLink}\nPassbook: {passbookLink}\n\n{tagline}',
-    due: 'Namaste {customerName}, a gentle reminder from {shopName}.\nBalance due: {balance}\nPay by UPI: {upiPayLink}\nPassbook: {passbookLink}\nThank you!',
+    daily: 'Namaste {customerName}!\n{shopName} — {date}\nClothes today: {clothesCount}\nBill today: {totalClothes}\nBalance due: {balance}\n\n{tagline}',
+    due: 'Namaste {customerName}, a gentle reminder from {shopName}.\nBalance due: {balance}\nThank you!',
     ready: 'Namaste {customerName}, your clothes are ready at {shopName}.\nDelivery on {date}.\nBalance due: {balance}\nThank you!',
-    welcome: 'Namaste {customerName}, welcome to {shopName}!\n{tagline}\nYour passbook: {passbookLink}'
+    welcome: 'Namaste {customerName}, welcome to {shopName}!\n{tagline}'
   };
 }
 const TPL_NAMES = { daily: 'Daily entry', due: 'Payment due', ready: 'Order ready', welcome: 'Welcome' };
@@ -1425,11 +1425,7 @@ function appBase() {
   const href = location.href.split('#')[0].split('?')[0].replace(/index\.html$/, '');
   return href.replace(/\/$/, '');
 }
-function passbookLink(customerId) {
-  const payload = { v: 1, s: DB.shop.name, t: DB.shop.tagline, c: customerId, n: (custById(customerId) || {}).name || '' };
-  const packed = LZString.compressToEncodedURIComponent(JSON.stringify(payload));
-  return appBase() + '/#p=' + packed;
-}
+
 function renderTemplate(key, ctx) {
   let t = DB.templates[key] || '';
   Object.keys(ctx).forEach(k => { t = t.split('{' + k + '}').join(ctx[k] == null ? '' : String(ctx[k])); });
@@ -1445,8 +1441,6 @@ function customerCtx(c, extra) {
     date: fmtD(todayISO()),
     clothesCount: '', totalClothes: String(t.clothes), rate: '',
     balance: t.balance > 0 ? money(t.balance) : 'Nil',
-    upiPayLink: DB.shop.upi ? upiLink(t.balance) : '',
-    passbookLink: passbookLink(c.id),
     shopName: DB.shop.name, tagline: DB.shop.tagline
   }, extra || {});
 }
@@ -1937,7 +1931,6 @@ SCREENS.settings = function () {
       ].join(''))}
     ${sec('Customer app', [
         srow('qr', 'Customer app QR', 'Scan to install', 'customerAppQr'),
-        srow('link', 'Get passbook links', '', 'passbookLinks')
       ].join(''))}
     ${sec('Data', [
         srow('refresh', 'Cloud sync', FB.status === 'saved' ? 'Saved' : FB.status === 'saving' ? 'Saving…' : FB.status === 'error' ? 'Failed' : FB.status === 'local' ? 'Device only' : 'Idle', 'cloudSync'),
@@ -2664,7 +2657,7 @@ function openRateItem(id) {
 }
 
 /* ---------- template editor ---------- */
-const VARS = ['customerName', 'date', 'clothesCount', 'totalClothes', 'rate', 'balance', 'upiPayLink', 'passbookLink', 'shopName', 'tagline'];
+const VARS = ['customerName', 'date', 'clothesCount', 'totalClothes', 'rate', 'balance', 'shopName', 'tagline'];
 function openTemplateEditor(key) {
   openSheet({
     title: TPL_NAMES[key],
@@ -2677,7 +2670,7 @@ function openTemplateEditor(key) {
       const ta = $('#tp-txt', w), prev = $('#tp-prev', w);
       const sample = {
         customerName: 'Customer', date: fmtD(todayISO()), clothesCount: '6', totalClothes: '42',
-        rate: money(10), balance: money(240), upiPayLink: 'upi://pay?pa=…', passbookLink: 'https://…/#p=…',
+        rate: money(10), balance: money(240),
         shopName: DB.shop.name, tagline: DB.shop.tagline
       };
       const draw = () => {
@@ -2749,27 +2742,6 @@ function acceptRequest(id) {
   toast('Request accepted · entry ' + String(e.no).padStart(2, '0'));
   snack('Send a confirmation to ' + r.name.split(' ')[0] + '?', 'WhatsApp', () => {
     openWa(c.phone, `Namaste ${r.name.split(' ')[0]}, pickup confirmed for ${fmtD(r.date)} (${r.slot}).\nEntry ${String(e.no).padStart(2, '0')} · approx ${r.count} pcs.\n— ${DB.shop.name}`);
-  });
-}
-
-/* ---------- passbook links ---------- */
-function openPassbookLinks() {
-  if (!liveCustomers().length) return toast('Add a customer first');
-  openSheet({
-    title: 'Get passbook links',
-    body: `<div class="tiny" style="margin-bottom:10px">Share a private link so a customer can open their passbook.</div>
-      <div class="card flat" style="padding:0 14px">${liveCustomers().map(c => `<button class="listrow" data-pb="${c.id}">
-        ${avatarHTML(c.name)}<div class="grow"><div class="nm">${esc(c.name)}</div><div class="mt">${esc(c.phone || 'no mobile')}</div></div>${ic('link', 17)}
-      </button>`).join('')}</div>`,
-    onMount: w => {
-      $$('[data-pb]', w).forEach(b => b.addEventListener('click', () => {
-        const c = custById(b.dataset.pb);
-        const link = passbookLink(c.id);
-        copyText(link);
-        requestClose();
-        setTimeout(() => snack('Link copied for ' + c.name.split(' ')[0], 'WhatsApp', () => openWa(c.phone, `Namaste ${c.name.split(' ')[0]}, here is your passbook: ${link}\n— ${DB.shop.name}`), 9000), 100);
-      }));
-    }
   });
 }
 
@@ -3403,7 +3375,6 @@ Object.assign(ACTIONS, {
     confirmSheet({ title: 'Sign out?', msg: 'You will go back to the sign-in screen.', label: 'Sign out', danger: true, onOk: () => { DB.session = null; saveSession(null); UI.mode = 'admin'; UI.screen = 'signin'; UI.params = {}; NAVSTACK.length = 0; if (window.FBGoogle) window.FBGoogle.signOut(); render(); } });
   },
   exitPreview: () => exitPreview(),
-  passbookLinks: () => openPassbookLinks(),
   cloudSync: async () => {
     FB.warned = false;
     FB.queue.push(['all']);            /* push everything up */
