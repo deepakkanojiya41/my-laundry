@@ -1638,7 +1638,6 @@ SCREENS.home = function () {
       <div class="tags">${line.map(x => `<div class="cl-tag ${x.k}">${String(x.e.no).padStart(2, '0')}</div>`).join('')}
       ${more ? `<div class="cl-tag cl-other">+${more}</div>` : ''}</div>
     </div>
-    <div class="hero-art">${machineSVG(112)}</div>
   </div>`;
 
   const reqCard = reqs.length ? `<div class="card alert tap" data-act="goTab" data-tab="orders">
