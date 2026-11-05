@@ -114,6 +114,26 @@ a{color:var(--focus)}
   margin:0 -16px 16px;padding:calc(18px + env(safe-area-inset-top,0px)) 20px 22px;
   border-radius:0;position:relative;overflow:hidden;
 }
+.hero-bubbles{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+.hero-bubbles .bub{--rise:460px;position:absolute;bottom:-70px;border-radius:50%;background:radial-gradient(circle at 32% 28%,rgba(255,255,255,.95),rgba(255,255,255,.35) 60%,rgba(255,255,255,0) 74%);animation:bubbleUp linear infinite}
+.bub.b0{--o:.20;left:5%;width:36px;height:36px;opacity:.20;animation-duration:19s;animation-delay:-2s}
+.bub.b1{--o:.16;left:16%;width:16px;height:16px;opacity:.16;animation-duration:15s;animation-delay:-7s}
+.bub.b2{--o:.13;left:29%;width:50px;height:50px;opacity:.13;animation-duration:24s;animation-delay:-13s}
+.bub.b3{--o:.18;left:42%;width:22px;height:22px;opacity:.18;animation-duration:17s;animation-delay:-4s}
+.bub.b4{--o:.14;left:55%;width:30px;height:30px;opacity:.14;animation-duration:21s;animation-delay:-16s}
+.bub.b5{--o:.22;left:68%;width:13px;height:13px;opacity:.22;animation-duration:14s;animation-delay:-9s}
+.bub.b6{--o:.15;left:79%;width:40px;height:40px;opacity:.15;animation-duration:23s;animation-delay:-6s}
+.bub.b7{--o:.19;left:90%;width:20px;height:20px;opacity:.19;animation-duration:16s;animation-delay:-11s}
+.bub.b8{--o:.17;left:23%;width:26px;height:26px;opacity:.17;animation-duration:18s;animation-delay:-8s}
+.bub.b9{--o:.14;left:64%;width:18px;height:18px;opacity:.14;animation-duration:22s;animation-delay:-15s}
+@keyframes bubbleUp{
+  0%{transform:translateY(0) translateX(0) scale(.9);opacity:0}
+  10%{opacity:var(--o,1)}
+  50%{transform:translateY(calc(var(--rise) * -.5)) translateX(16px) scale(1)}
+  90%{opacity:var(--o,1)}
+  100%{transform:translateY(calc(var(--rise) * -1.05)) translateX(-12px) scale(1.08);opacity:0}}
+.hero-top,.hero-stat,.hero-line,.clothesline{position:relative;z-index:1}
+@media (prefers-reduced-motion:reduce){.hero-bubbles{display:none}}
 .hero-top{display:flex;align-items:flex-start;gap:10px}
 .hero-bell{position:relative;background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.3);color:var(--on-brand)}
 .hero-bell .badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:var(--due);color:#fff;font-size:10.5px;font-weight:800;display:grid;place-items:center;padding:0 4px;border:2px solid var(--brand)}
@@ -1624,6 +1644,7 @@ SCREENS.home = function () {
   const more = Math.max(0, open.length - line.length);
 
   const hero = `<div class="hero">
+    <div class="hero-bubbles" aria-hidden="true">${[0,1,2,3,4,5,6,7,8,9].map(i => `<span class="bub b${i}"></span>`).join('')}</div>
     <div class="hero-top">
       <div class="grow">
         <div class="hero-greet-big">${esc(greeting())}</div>
