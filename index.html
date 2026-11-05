@@ -1932,7 +1932,6 @@ SCREENS.settings = function () {
       ].join(''))}
     ${sec('Customer app', [
         srow('qr', 'Customer app QR', 'Scan to install', 'customerAppQr'),
-        srow('users', 'Switch to customer app', '', 'switchToCustomer'),
         srow('link', 'Get passbook links', '', 'passbookLinks')
       ].join(''))}
     ${sec('Data', [
@@ -3398,7 +3397,6 @@ Object.assign(ACTIONS, {
   signOutCust: () => {
     confirmSheet({ title: 'Sign out?', msg: 'You will go back to the sign-in screen.', label: 'Sign out', danger: true, onOk: () => { DB.session = null; saveSession(null); UI.mode = 'admin'; UI.screen = 'signin'; UI.params = {}; NAVSTACK.length = 0; if (window.FBGoogle) window.FBGoogle.signOut(); render(); } });
   },
-  switchToCustomer: () => openPreviewCustomer(),
   exitPreview: () => exitPreview(),
   passbookLinks: () => openPassbookLinks(),
   cloudSync: async () => {
