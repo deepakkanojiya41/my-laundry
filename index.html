@@ -152,11 +152,13 @@ a{color:var(--focus)}
 /* clothesline */
 .clothesline{position:relative;height:96px;margin-top:26px;overflow:hidden}
 .clothesline svg.rope{position:absolute;inset:0;width:100%;height:100%}
-.clothesline .tags{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:center;gap:10px;padding-top:6px}
-.cl-tag{flex:0 0 auto;min-width:44px;height:56px;padding:10px 6px 6px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;box-shadow:0 4px 10px rgba(0,0,0,.18);position:relative;font-variant-numeric:tabular-nums}
-.cl-tag:before{content:"";position:absolute;top:6px;left:50%;width:6px;height:6px;border-radius:50%;background:rgba(18,44,99,.75);transform:translateX(-50%)}
-.cl-tag:after{content:"";position:absolute;top:-10px;left:50%;width:8px;height:12px;border-radius:3px;background:rgba(255,255,255,.85);transform:translateX(-50%)}
-.cl-tag small{font-size:9px;font-weight:600;opacity:.85;letter-spacing:.02em}
+.clothesline .tags{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:center;gap:12px;padding-top:4px;z-index:1}
+.cl-tag{flex:0 0 auto;min-width:44px;height:56px;margin-top:14px;padding:12px 6px 6px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;box-shadow:0 4px 10px rgba(0,0,0,.18);position:relative;font-variant-numeric:tabular-nums;z-index:1}
+/* peg that hooks over the line */
+.cl-tag:before{content:"";position:absolute;left:50%;top:-10px;transform:translateX(-50%);width:13px;height:18px;border-radius:3px 3px 2px 2px;background:linear-gradient(#ffffff,#dbe4f2);box-shadow:0 1px 2px rgba(0,0,0,.28);z-index:2}
+/* the hole the peg goes through */
+.cl-tag:after{content:"";position:absolute;left:50%;top:6px;transform:translateX(-50%);width:6px;height:6px;border-radius:50%;background:rgba(18,44,99,.38);z-index:2}
+.cl-tag.cl-other{margin-top:14px}
 .cl-overdue{background:#F8D6DB;color:#86192C}
 .cl-ready{background:#CDEEDD;color:#0F5A3A}
 .cl-processing{background:#FBEDB8;color:#5F4A00}
