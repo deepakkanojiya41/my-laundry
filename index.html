@@ -87,11 +87,11 @@ a{color:var(--focus)}
 @keyframes outR{to{opacity:0;transform:translateX(28px)}}
 
 /* ---------- type ---------- */
-.h1{font-size:26px;font-weight:700;line-height:1.15}
-.h2{font-size:19px;font-weight:700}
+.h1{font-size:27px;font-weight:700;line-height:1.08;letter-spacing:-.028em}
+.h2{font-size:18.5px;font-weight:700;line-height:1.2;letter-spacing:-.02em}
 .h3{font-size:15px;font-weight:700;letter-spacing:-.01em}
-.sub{color:var(--muted);font-size:14px}
-.tiny{font-size:12px;color:var(--muted)}
+.sub{color:var(--muted);font-size:14.5px;line-height:1.5}
+.tiny{font-size:12.8px;line-height:1.45;color:var(--muted)}
 .center{text-align:center}
 .mono{font-variant-numeric:tabular-nums}
 .sec-title{display:flex;align-items:center;justify-content:space-between;margin:22px 0 10px;gap:8px}
@@ -2529,7 +2529,7 @@ function openInvoiceSheet(cid) {
       $$('[data-invm]', w).forEach(b => b.addEventListener('click', () => { UI.invMonth = b.dataset.invm; requestClose(); setTimeout(() => openInvoiceSheet(cid), 120); }));
       $('#inv-make', w).addEventListener('click', () => {
         const chosen = $$('[data-inve]', w).filter(x => x.checked).map(x => x.dataset.inve);
-        if (!chosen.length) return toast('Select at least one entry');
+        if (!chosen.length) return toast('Select at least one entry to bill.');
         const lines = [];
         chosen.forEach(id => {
           const e = entryById(id); if (!e) return;
@@ -3027,7 +3027,7 @@ SCREENS.newpickup = function () {
       <div class="field"><label class="label">Clothes estimate</label><input class="input" id="pu-count" inputmode="numeric" placeholder="e.g. 6"></div>
       <div class="field"><label class="label">Address</label><textarea class="input" id="pu-addr">${esc(c.address || '')}</textarea></div>
       <div class="field"><label class="label">Note</label><input class="input" id="pu-note" placeholder="Optional"></div>
-      <button class="btn primary" data-act="pickSend">Send pickup request</button>
+      <button class="btn primary" data-act="pickSend">Request pickup</button>
     </div>`
   };
 };
@@ -3563,11 +3563,11 @@ Object.assign(ACTIONS, {
     const err = $('#ob-err');
     const bad = m => { err.textContent = m; err.style.display = 'block'; };
     err.style.display = 'none';
-    if (!name) return bad('Please enter your name.');
-    if (!validPhone(phone)) return bad('Mobile must be 10 digits and start with 6 to 9.');
-    if (!flat) return bad('Flat / house number is required.');
-    if (!wing) return bad('Wing or building name is required.');
-    if (!area) return bad('Area or locality is required.');
+    if (!name) return bad('Enter your name to continue.');
+    if (!validPhone(phone)) return bad('Enter a 10-digit mobile number.');
+    if (!flat) return bad('Add your flat or house number.');
+    if (!wing) return bad('Add your wing or building name.');
+    if (!area) return bad('Add your area or locality.');
     const pr = UI.params || {};
     const id = pr.uid || uid();
     const address = [flat, wing, area].filter(Boolean).join(', ');
@@ -3636,8 +3636,8 @@ Object.assign(ACTIONS, {
     const count = Number(($('#pu-count') || {}).value) || 0;
     const addr = ($('#pu-addr') || {}).value || '';
     const note = ($('#pu-note') || {}).value || '';
-    if (!count) return toast('How many clothes?');
-    if (!addr.trim()) return toast('Please add an address');
+    if (!count) return toast('Add the clothes count first.');
+    if (!addr.trim()) return toast('Add a pickup address to continue.');
     const req = {
       id: uid(), name: (c || {}).name || '', mobile: (c || {}).phone || '',
       customerId: (c || {}).id || '', customerEmail: ((c || {}).email || '').toLowerCase(),
