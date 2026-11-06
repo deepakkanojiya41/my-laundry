@@ -450,6 +450,55 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
   .hero{display:none}
 }
 
+/* ---------- invoice document ---------- */
+.inv{background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:20px 18px}
+.inv-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding-bottom:14px;border-bottom:2px solid var(--ink)}
+.inv-brand{display:flex;gap:10px;align-items:flex-start;min-width:0}
+.inv-logo{width:38px;height:38px;flex:0 0 38px;border-radius:10px;background:var(--brand);color:var(--on-brand);display:grid;place-items:center}
+.inv-logo svg{width:20px;height:20px}
+.inv-shop{font-family:"Bricolage Grotesque",sans-serif;font-size:19px;font-weight:700;letter-spacing:-.02em;line-height:1.15}
+.inv-meta{font-size:12px;color:var(--muted);line-height:1.45}
+.inv-title{text-align:right;flex:0 0 auto}
+.inv-word{font-family:"Bricolage Grotesque",sans-serif;font-size:15px;font-weight:800;letter-spacing:.14em;color:var(--brand)}
+.inv-party{display:flex;justify-content:space-between;gap:14px;padding:14px 0 16px}
+.inv-party>div:last-child{flex:0 0 auto;max-width:46%}
+.inv-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:3px}
+.inv-name{font-size:16px;font-weight:700;line-height:1.25}
+.inv-party>div:last-child .inv-name{font-size:15px;white-space:nowrap}
+.inv-table{width:100%;border-collapse:collapse;font-size:13px}
+.inv-table th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;padding:0 0 8px;border-bottom:1.5px solid var(--line)}
+.inv-table td{padding:9px 0;border-bottom:1px dashed var(--line);vertical-align:top}
+.inv-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.inv-table th.num{text-align:right}
+.inv-totals{margin-top:12px;margin-left:auto;max-width:260px}
+.inv-trow{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:13px;font-variant-numeric:tabular-nums}
+.inv-trow span:last-child{font-weight:600}
+.inv-grand{border-top:2px solid var(--ink);margin-top:6px;padding-top:9px;font-size:15.5px;font-weight:800}
+.inv-grand span:last-child{font-weight:800}
+.inv-note{margin-top:14px;padding:10px 12px;border-radius:10px;background:var(--soap);font-size:12.5px;color:var(--ink)}
+.inv-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-top:26px;padding-top:14px;border-top:1px solid var(--line)}
+.inv-sign{text-align:right}
+.inv-signline{width:130px;border-bottom:1px solid var(--line-strong);height:26px;margin-left:auto;margin-bottom:5px}
+
+/* ---------- print: clean A4 invoice / bill ---------- */
+@media print{
+  @page{size:A4;margin:14mm}
+  html,body{background:#fff!important;color:#000!important}
+  #nav,#ab,.actionbar,.fab,.topbar,#toast,#snack,.sheet-wrap,.no-print,.clothesline{display:none!important}
+  #app{max-width:none;padding:0}
+  #view{padding:0!important;overflow:visible}
+  .inv,.card{border:1px solid #d5d5d5!important;box-shadow:none!important;border-radius:0!important;break-inside:avoid;page-break-inside:avoid}
+  .inv{padding:16mm 14mm}
+  .inv-shop{font-size:20pt}
+  .inv-word{font-size:12pt;color:#122C63!important}
+  .inv-table{font-size:10.5pt}
+  .inv-table th,.inv-meta,.inv-label{color:#555!important}
+  .inv-grand{font-size:13pt}
+  .btn,.chip,.seg,.iconbtn{display:none!important}
+  a{color:#000!important;text-decoration:none}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+
 </style>
 </head>
 <body>
@@ -2561,29 +2610,67 @@ function nextInvoiceNo(mk) {
 function invoiceHTML(inv) {
   const c = custById(inv.customerId) || { name: 'Customer' };
   const s = DB.shop;
-  return `<div class="card">
-    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-      <div><div class="h2">${esc(s.name)}</div><div class="tiny" style="margin-top:2px">${esc(s.address || '')}${s.phone ? ' · +91 ' + esc(s.phone) : ''}</div></div>
-      <div style="text-align:right"><div class="h3">INVOICE</div><div class="tiny">${esc(inv.no)}</div><div class="tiny">${esc(fmtD(inv.date))}</div></div>
+  const paid = sum(liveEntries().filter(e => e.customerId === inv.customerId && monthKey(e.created) === inv.month), entryPaid);
+  return `<div class="inv">
+    <div class="inv-head">
+      <div class="inv-brand">
+        <div class="inv-logo">${ic('bill')}</div>
+        <div>
+          <div class="inv-shop">${esc(s.name)}</div>
+          <div class="inv-meta">${esc(s.address || '')}</div>
+          <div class="inv-meta">${s.phone ? '+91 ' + esc(s.phone) : ''}${s.upi ? ' · UPI ' + esc(s.upi) : ''}</div>
+        </div>
+      </div>
+      <div class="inv-title">
+        <div class="inv-word">INVOICE</div>
+        <div class="inv-meta"><b>${esc(inv.no)}</b></div>
+        <div class="inv-meta">${esc(fmtD(inv.date))}</div>
+      </div>
     </div>
-    <div style="margin-top:12px"><div class="tiny">Billed to</div><div style="font-weight:700">${esc(c.name)}</div>
-      <div class="tiny">${esc(c.address || '')}${c.phone ? ' · ' + esc(c.phone) : ''}</div></div>
-  </div>
-  <div class="card">
-    ${inv.lines.map(l => `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px dashed var(--line)">
-      <span>${esc(l.desc)} <span class="tiny">× ${l.qty} @ ${money(l.price)}</span></span>
-      <b style="font-variant-numeric:tabular-nums">${money(l.qty * l.price)}</b></div>`).join('')}
-    <div style="margin-top:10px">
-      ${rrow('Subtotal', money(inv.subtotal))}
-      ${inv.extra ? rrow('Extra charge', money(inv.extra)) : ''}
-      ${inv.discount ? rrow('Discount', '-' + money(inv.discount)) : ''}
-      ${inv.gst ? rrow('GST ' + inv.gstPct + '%', money(inv.gst)) : ''}
-      ${rrow('Total', money(inv.total), 'total')}
+
+    <div class="inv-party">
+      <div>
+        <div class="inv-label">Billed to</div>
+        <div class="inv-name">${esc(c.name)}</div>
+        <div class="inv-meta">${esc(c.address || '')}</div>
+        <div class="inv-meta">${c.phone ? '+91 ' + esc(c.phone) : ''}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="inv-label">Period</div>
+        <div class="inv-name" style="font-size:14px">${esc(monthLabel(inv.month))}</div>
+        <div class="inv-meta">Payment: UPI / cash</div>
+      </div>
     </div>
-    ${inv.note ? `<div class="tiny" style="margin-top:10px">Note: ${esc(inv.note)}</div>` : ''}
-    <div class="tiny center" style="margin-top:14px">${esc(s.tagline)}</div>
+
+    <table class="inv-table">
+      <thead><tr><th style="width:52%">Description</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead>
+      <tbody>
+        ${inv.lines.map(l => `<tr><td>${esc(l.desc)}</td><td class="num">${l.qty}</td><td class="num">${money(l.price)}</td><td class="num">${money(l.qty * l.price)}</td></tr>`).join('')}
+      </tbody>
+    </table>
+
+    <div class="inv-totals">
+      <div class="inv-trow"><span>Subtotal</span><span>${money(inv.subtotal)}</span></div>
+      ${inv.extra ? `<div class="inv-trow"><span>Extra charge</span><span>${money(inv.extra)}</span></div>` : ''}
+      ${inv.discount ? `<div class="inv-trow"><span>Discount</span><span>-${money(inv.discount)}</span></div>` : ''}
+      ${inv.gst ? `<div class="inv-trow"><span>GST ${inv.gstPct}%</span><span>${money(inv.gst)}</span></div>` : ''}
+      <div class="inv-trow inv-grand"><span>Total payable</span><span>${money(inv.total)}</span></div>
+      ${paid ? `<div class="inv-trow"><span>Received</span><span>${money(paid)}</span></div>` : ''}
+      ${paid && inv.total - paid > 0 ? `<div class="inv-trow" style="color:var(--due)"><span>Balance due</span><span>${money(inv.total - paid)}</span></div>` : ''}
+    </div>
+
+    ${inv.note ? `<div class="inv-note"><b>Note:</b> ${esc(inv.note)}</div>` : ''}
+
+    <div class="inv-foot">
+      <div>
+        <div class="inv-meta">Thank you for your business.</div>
+        <div class="inv-meta">${esc(s.tagline || '')}</div>
+      </div>
+      <div class="inv-sign"><div class="inv-signline"></div><div class="inv-meta">For ${esc(s.name)}</div></div>
+    </div>
   </div>`;
 }
+
 function invoiceText(inv) {
   const c = custById(inv.customerId) || { name: 'Customer' };
   return `${DB.shop.name} — INVOICE ${inv.no}\n${fmtD(inv.date)}\nTo: ${c.name}\n\n` +
