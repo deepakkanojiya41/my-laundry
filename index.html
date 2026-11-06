@@ -343,7 +343,7 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 .sheet{position:relative;width:100%;max-width:520px;max-height:92dvh;background:var(--surface);border-radius:22px 22px 0 0;display:flex;flex-direction:column;transform:translate3d(0,100%,0);transition:transform .3s cubic-bezier(.22,.85,.24,1);box-shadow:0 -10px 40px rgba(0,0,0,.3);will-change:transform;backface-visibility:hidden;-webkit-backface-visibility:hidden}
 .sheet-wrap.in .sheet{transform:translate3d(0,0,0)}
 .sheet-wrap.stacked .sheet{box-shadow:0 -10px 40px rgba(0,0,0,.3), 0 0 0 1px var(--line)}
-.grab{padding:9px 0 3px;display:flex;justify-content:center;cursor:grab;touch-action:none;flex:0 0 auto}
+.grab{padding:12px 0 6px;display:flex;justify-content:center;cursor:grab;touch-action:none;flex:0 0 auto}
 .sheet-wrap.dragging,.sheet-wrap.dragging *{user-select:none;-webkit-user-select:none}
 .sheet-wrap.dragging .grab{cursor:grabbing}
 /* a cheap shadow while the finger is down: the big blur is the main source of frame drops */
@@ -1153,8 +1153,8 @@ function bindSheetGestures(wrap, sheet) {
     wrap.classList.remove('dragging');
     flush();
     if (travelled > 10) swallowNextClick();
-    const closeAt = Math.min(140, sheet.offsetHeight * 0.26);
-    if (dy > closeAt || (velocity > 0.45 && dy > 20)) {
+    const closeAt = Math.min(84, sheet.offsetHeight * 0.16);
+    if (dy > closeAt || (velocity > 0.25 && dy > 8) || dy > 56) {
       sheet.style.transition = 'transform ' + CLOSE_MS + 'ms cubic-bezier(.3,0,.7,.4)';
       sheet.style.transform = 'translate3d(0,100%,0)';
       bd.style.opacity = '0';
@@ -1205,7 +1205,7 @@ function bindSheetGestures(wrap, sheet) {
       const mv = ev => {
         const y = ev.touches[0].clientY;
         if (!dragging) {
-          if (y - armY < 6) return;
+          if (y - armY < 4) return;
           begin(armY);
         }
         follow(y);
