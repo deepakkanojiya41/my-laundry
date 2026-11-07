@@ -253,6 +253,7 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 .listrow:last-child{border-bottom:0}
 .listrow:active{opacity:.7}
 .listrow .nm{font-weight:700;font-size:15px}
+.listrow.sel{background:var(--soap);border-radius:10px;margin:0 -8px;padding-left:8px;padding-right:8px}
 /* customer list row: name + phone on one line, amount on the right */
 .listplain{background:transparent}
 .crow .avatar{width:60px;height:60px;flex:0 0 60px;font-size:20px}
@@ -2095,8 +2096,25 @@ SCREENS.bills = function () {
   </div>`;
   const chips = `<div class="chips" style="margin-bottom:12px">${['All', 'Has dues'].map(k => `<button class="chip ${filt === k ? 'on' : ''}" data-act="billsFilter" data-v="${k}">${k}</button>`).join('')}</div>`;
   const r = receipt([rrow('Billed', money(tot.billed)), rrow('Received', money(tot.received), 'ok'), rrow('Still to collect', money(tot.due), 'due')]);
+  /* every month with its own totals: November alag, December alag */
+  const months = Array.from(new Set(liveEntries().map(e => monthKey(e.created)))).sort().reverse();
+  const cur = monthKey(todayISO());
+  if (!months.includes(cur)) months.unshift(cur);
+  const monthRows = months.slice(0, 12).map(m => {
+    const rows = liveCustomers().map(c => billData(c, m));
+    const billed = sum(rows, b => b.charges), rec = sum(rows, b => b.paidInMonth);
+    const due = Math.max(0, billed - rec);          /* that month's own unpaid amount */
+    const nc = rows.filter(b => b.entries.length).length;
+    return `<button class="listrow ${m === mk ? 'sel' : ''}" data-act="billPickMonth" data-v="${m}">
+      <div class="grow"><div class="nm">${esc(monthLabel(m))}</div><div class="mt">${nc} customer${nc === 1 ? '' : 's'} · billed ${money(billed)}</div></div>
+      <div class="rt">${due > 0 ? `<div class="bal">${money(due)}</div>` : `<div class="bal settled">Settled</div>`}</div>
+    </button>`;
+  }).join('');
   return {
-    html: topbar('Monthly bills', { back: true, sub: 'Ledger per customer' }) + monthBar + r + chips +
+    html: topbar('Monthly bills', { back: true, sub: 'Month-wise ledger' }) +
+      `<div class="sec-title"><div class="h2">Months</div><div class="tiny">tap to open</div></div>
+       <div class="listplain" style="margin-bottom:16px">${monthRows}</div>` +
+       monthBar + r + chips +
       (list.length ? `<div class="card flat" style="padding:0 14px">${list.map(x => `<button class="listrow" data-act="openBill" data-cid="${x.c.id}" data-month="${mk}">
         ${avatarHTML(x.c.name)}
         <div class="grow"><div class="nm">${esc(x.c.name)}</div><div class="mt">${x.b.entries.length} entr${x.b.entries.length === 1 ? 'y' : 'ies'} · billed ${money(x.b.charges)}</div></div>
@@ -3556,6 +3574,7 @@ Object.assign(ACTIONS, {
   purgeEntry: t => confirmSheet({ title: 'Delete forever?', msg: 'This cannot be undone.', label: 'Delete forever', danger: true, onOk: () => { DB.bin.entries = DB.bin.entries.filter(x => x.id !== t.dataset.id); render(); toast('Deleted forever'); } }),
 
   /* bills */
+  billPickMonth: t => { UI.billsMonth = t.dataset.v; render(); },
   billMonth: t => { UI.billsMonth = monthAdd(UI.billsMonth || monthKey(todayISO()), +t.dataset.v); render(); },
   billsFilter: t => { UI.billsFilter = t.dataset.v; render(); },
   billNav: t => { const mk = monthAdd(UI.params.month || monthKey(todayISO()), +t.dataset.v); UI.params = { cid: UI.params.cid, month: mk }; render(); },
