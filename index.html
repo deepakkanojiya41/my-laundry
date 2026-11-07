@@ -2150,11 +2150,12 @@ function billBlock(c, mk) {
     </div>`).join('');
   const svcRows = Object.entries(b.bySvc).map(([k, v]) => rrow(k, `${v.pieces} pcs · ${money(v.amount)}`));
   return `
+    ${b.entries.length ? '' : `<div class="notice">${ic('bill', 15)}<div>Nothing billed in ${esc(monthLabel(mk))}. The amount below is carried from earlier months.</div></div>`}
     <div class="receipt">
-      ${rrow('Previous balance', money(b.prevBal))}
       ${rrow('This month charges', money(b.charges))}
-      ${rrow('Payments received', money(b.paidInMonth), 'ok')}
-      ${rrow('Amount due', money(b.due), b.due > 0 ? 'due' : 'ok')}
+      ${rrow('Paid this month', money(b.paidInMonth), 'ok')}
+      ${b.prevBal ? rrow('Carried from earlier months', money(b.prevBal)) : ''}
+      ${rrow('Total due (all months)', money(b.due), b.due > 0 ? 'due' : 'ok')}
     </div>
     <div class="sec-title"><div class="h2">Entries</div><div class="tiny">${b.entries.length}</div></div>
     ${b.entries.length ? `<div class="card">${lines}</div>` : `<div class="card tiny">No entries this month.</div>`}
