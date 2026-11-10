@@ -47,6 +47,7 @@
 html{-webkit-text-size-adjust:100%}
 /* text copying is blocked across the app; form fields stay usable */
 html,body{-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;-webkit-touch-callout:none}
+html{scroll-padding-top:60px}
 html,body{touch-action:pan-x pan-y;-ms-content-zooming:none;-ms-touch-action:pan-x pan-y;overscroll-behavior-y:none}
 input,textarea,select,[contenteditable="true"]{-webkit-user-select:text;-moz-user-select:text;user-select:text}
 img,svg{-webkit-user-drag:none;user-select:none}
@@ -503,12 +504,14 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 
 /* compact bar that slides in once the hero scrolls away */
 .minibar{position:fixed;left:0;right:0;top:0;z-index:55;display:flex;align-items:center;gap:10px;
-  padding:calc(9px + env(safe-area-inset-top,0px)) 16px 9px;background:var(--brand);color:var(--on-brand);
-  transform:translateY(-110%);transition:transform .26s cubic-bezier(.2,.8,.25,1);box-shadow:0 6px 18px rgba(10,20,40,.28)}
+  padding:calc(7px + env(safe-area-inset-top,0px)) 16px 7px;
+  background:color-mix(in srgb,var(--brand) 92%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  color:var(--on-brand);transform:translateY(-110%);transition:transform .24s cubic-bezier(.2,.8,.25,1);
+  box-shadow:0 4px 16px rgba(10,20,40,.26);cursor:pointer}
 .minibar.show{transform:translateY(0)}
 .minibar .mb-in{max-width:520px;margin:0 auto;width:100%;display:flex;align-items:center;gap:10px}
 .minibar .mb-greet{font-size:12px;opacity:.72;line-height:1.2}
-.minibar .mb-stat{font-family:"Bricolage Grotesque",sans-serif;font-size:16px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
+.minibar .mb-stat{font-family:"Bricolage Grotesque",sans-serif;font-size:15.5px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
 .minibar .mb-bell{width:34px;height:34px;border-radius:11px;background:rgba(255,255,255,.14);border:1.5px solid rgba(255,255,255,.3);color:var(--on-brand);display:grid;place-items:center;position:relative;flex:0 0 34px}
 .minibar .mb-bell svg{width:17px;height:17px}
 .minibar .badge{position:absolute;top:-4px;right:-4px;min-width:17px;height:17px;border-radius:9px;background:var(--due);color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center;padding:0 4px;border:2px solid var(--brand)}
@@ -1139,6 +1142,7 @@ function openSheet(opts) {
     <div class="sheet-body">${opts.body || ''}</div>
     ${opts.foot ? `<div class="sheet-foot">${opts.foot}</div>` : ''}
   </div>`;
+  const mbEl = document.getElementById('minibar'); if (mbEl) mbEl.classList.remove('show');
   $('#sheets').appendChild(wrap);
   const sheet = $('.sheet', wrap);
   if (sheets.length) wrap.classList.add('stacked');
@@ -1158,7 +1162,7 @@ function removeSheet(s) {
   s.wrap.classList.remove('in');
   setTimeout(() => s.wrap.remove(), 300);
   if (s.onClose) s.onClose();
-  if (!sheets.length) lockBody(false);
+  if (!sheets.length) { lockBody(false); syncScrollChrome(); }
   return true;
 }
 function closeTopSheet() {
@@ -1472,7 +1476,13 @@ function syncScrollChrome() {
   if (fab && inline) fab.classList.toggle('show', inline.getBoundingClientRect().bottom < 8);
   /* the hero collapses into a slim bar once it scrolls away */
   const mini = document.getElementById('minibar');
-  if (mini) mini.classList.toggle('show', y > 120);
+  if (mini) {
+    const on = mini.classList.contains('show');
+    /* hysteresis + hide while a sheet is open, so it never flickers */
+    if (sheets.length) mini.classList.remove('show');
+    else if (!on && y > 150) mini.classList.add('show');
+    else if (on && y < 90) mini.classList.remove('show');
+  }
   if (sheets.length || nav.hidden) { lastY = y; return; }
   const dy = y - lastY;
   if (y > 96 && dy > 8) { nav.classList.add('hide'); if (ab) ab.classList.add('hide'); }
@@ -1712,7 +1722,7 @@ SCREENS.home = function () {
   ).slice(0, 8);
   const more = Math.max(0, open.length - line.length);
 
-  const miniBar = `<div class="minibar" id="minibar"><div class="mb-in">
+  const miniBar = `<div class="minibar" id="minibar" data-act="scrollTop" role="button" aria-label="Back to top"><div class="mb-in">
     <div class="grow"><div class="mb-greet">${esc(greeting())}</div><div class="mb-stat">${open.length} open order${open.length === 1 ? '' : 's'}${overdue.length ? ' · ' + overdue.length + ' overdue' : ''}</div></div>
     <button class="mb-bell" data-act="openNotifications" aria-label="Notifications">${ic('bell')}${unreadCount() ? `<span class="badge">${unreadCount()}</span>` : ''}</button>
   </div></div>`;
@@ -3708,6 +3718,7 @@ Object.assign(ACTIONS, {
   },
   custFilter: t => { UI.custFilter = t.dataset.v; render(); },
   custEditProfile: () => openCustomerProfileEdit(),
+  scrollTop: () => { window.scrollTo(0, 0); syncScrollChrome(); },
   openNotifications: () => {
     myNotifications().forEach(n => { if (!n.read) { n.read = true; persist('notification', n.id); } });
     go('notifications');
