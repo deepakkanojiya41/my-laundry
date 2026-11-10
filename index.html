@@ -1706,11 +1706,6 @@ SCREENS.home = function () {
     </div>
     <div class="hero-stat">${open.length} open order${open.length === 1 ? '' : 's'}</div>
     <div class="hero-line">${overdue.length ? `${overdue.length} overdue.` : (ready.length ? `${ready.length} ready for delivery.` : 'Nothing overdue.')}</div>
-    <div class="clothesline">
-      <svg class="rope" viewBox="0 0 320 74" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="14" x2="320" y2="14" stroke="rgba(255,255,255,.55)" stroke-width="2.4" stroke-linecap="round"/></svg>
-      <div class="tags">${line.map(x => `<div class="cl-tag ${x.k}">${String(x.e.no).padStart(2, '0')}</div>`).join('')}
-      ${more ? `<div class="cl-tag cl-other">+${more}</div>` : ''}</div>
-    </div>
   </div>`;
 
   const reqCard = reqs.length ? `<div class="card alert tap" data-act="goTab" data-tab="orders">
