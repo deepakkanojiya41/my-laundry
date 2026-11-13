@@ -1484,9 +1484,9 @@ function syncScrollChrome() {
     else if (on && y < 90) mini.classList.remove('show');
   }
   if (sheets.length || nav.hidden) { lastY = y; return; }
-  const dy = y - lastY;
-  if (y > 96 && dy > 8) { nav.classList.add('hide'); if (ab) ab.classList.add('hide'); }
-  else if (dy < -8 || y < 72) { nav.classList.remove('hide'); if (ab) ab.classList.remove('hide'); }
+  /* the bottom bars stay put: no auto-hide on scroll */
+  nav.classList.remove('hide');
+  if (ab) ab.classList.remove('hide');
   lastY = y;
 }
 /* keep polling cheap: pause when hidden, wake on interaction */
